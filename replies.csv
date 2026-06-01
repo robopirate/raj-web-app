@@ -1,0 +1,4 @@
+id,send_id,thread_id,message_id,from_addr,subject,body,sentiment,summary,draft_reply_id,status,received_at,created_at
+1,97,19e4a987fb37fa82,19e4a987fb37fa82,sojan63@rediffmail.com,reply mail,"Thank you for your mail
+s p john
+",neutral,A warm acknowledgment of the principal's email with a brief introduction of the RoboPirate outreach team.,r3884164693341938607,drafted,2026-05-21T18:25:34.548301,2026-05-21 12:55:34

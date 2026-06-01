@@ -1,0 +1,723 @@
+sequence_id,day,subject,html_body,source,locked,cached_at
+school,5,SCHOOL EMAIL 3 — DAY 5 TEMPLATE | Student Story + VBV Report | Replace {{PRINCIPAL_NAME}} {{SCHOOL_NAME}},"<div dir=""ltr""><div dir=""ltr""><u></u>
+
+
+<div style=""margin:0;padding:0;background:#f4f4f4;font-family:Arial,sans-serif"">
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""background:#f4f4f4;padding:20px 0"">
+<tbody><tr><td align=""center"">
+<table width=""600"" cellpadding=""0"" cellspacing=""0"" style=""background:#ffffff;border-radius:8px;overflow:hidden"">
+
+
+<tbody><tr><td style=""background:linear-gradient(135deg,#0d9b8a,#0bc5b0);padding:28px 32px;text-align:center"">
+<img src=""https://ci3.googleusercontent.com/meips/ADKq_Nan-7xmI2XgjiYAcfIO2Lh6JbDDvSECjdvzYEpIhgYTfOkd7JAmuRrF5LFxKarOs0Ma1QdlY1sbfqtloFG7JyxuyFm4=s0-d-e1-ft#https://robopirate.in/assets/logo-CCM9tiYQ.png"" alt=""RoboPirate"" width=""160"" style=""display:block;margin:0 auto 12px"">
+<p style=""color:#ffffff;font-size:13px;margin:0;letter-spacing:1px;text-transform:uppercase"">STEAM · AI · LABS FOR SCHOOLS</p>
+</td></tr>
+
+
+<tr><td style=""background:#1a6b6b;padding:12px 32px;text-align:center"">
+<table width=""100%"" cellpadding=""0"" cellspacing=""0""><tbody><tr>
+<td style=""color:#f5a623;font-size:18px;font-weight:bold;text-align:center"">85+<br><span style=""color:#ffffff;font-size:11px;font-weight:normal"">Smart Labs</span></td>
+<td style=""color:#ffffff;font-size:20px;text-align:center"">·</td>
+<td style=""color:#f5a623;font-size:18px;font-weight:bold;text-align:center"">65,000+<br><span style=""color:#ffffff;font-size:11px;font-weight:normal"">Students</span></td>
+<td style=""color:#ffffff;font-size:20px;text-align:center"">·</td>
+<td style=""color:#f5a623;font-size:18px;font-weight:bold;text-align:center"">6<br><span style=""color:#ffffff;font-size:11px;font-weight:normal"">States</span></td>
+<td style=""color:#ffffff;font-size:20px;text-align:center"">·</td>
+<td style=""color:#f5a623;font-size:18px;font-weight:bold;text-align:center"">100%<br><span style=""color:#ffffff;font-size:11px;font-weight:normal"">NEP 2020</span></td>
+</tr></tbody></table>
+</td></tr>
+
+
+<tr><td style=""padding:32px"">
+<p style=""color:#333;font-size:15px;line-height:1.6"">Dear {{PRINCIPAL_NAME}},</p>
+
+<p style=""color:#333;font-size:15px;line-height:1.6"">I want to share a real story with you today — not a pitch, just proof.</p>
+
+<p style=""color:#333;font-size:15px;line-height:1.6""><strong>Veer Baji Prabhu Vidyalay</strong> in Pune was the first school to install our WE Smart Lab. Within weeks, students who had never touched a circuit board were building projects, coding robots, and presenting to parents. The transformation was so visible that Star News Marathi came to cover it.</p>
+
+
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""margin:20px 0"">
+<tbody><tr><td align=""center"">
+<a href=""https://youtube.com/watch?v=iziKPBSfGKU"" style=""display:inline-block;background:#1a6b6b;color:#ffffff;font-size:14px;font-weight:bold;padding:12px 28px;border-radius:4px;text-decoration:none"" target=""_blank"">▶ Watch Star News Marathi Coverage</a>
+</td></tr>
+</tbody></table>
+
+<div style=""background:#f0fafa;border-left:4px solid #0d9b8a;padding:16px 20px;margin:20px 0;border-radius:4px"">
+<p style=""color:#0d9b8a;font-weight:bold;font-size:14px;margin:0 0 8px"">📄 Full Transparency Report — VBV School</p>
+<p style=""color:#555;font-size:14px;margin:0 0 12px"">See exactly how the lab was set up, what students learned, teacher feedback, and impact data — all documented.</p>
+<a href=""https://drive.google.com/file/d/1d7EEtC8YitbSj7U6ivHf_6WtUGuylT-B/view"" style=""display:inline-block;background:#0d9b8a;color:#ffffff;font-size:13px;font-weight:bold;padding:10px 20px;border-radius:4px;text-decoration:none"" target=""_blank"">📥 Download VBV Transparency Report</a>
+</div>
+
+<p style=""color:#333;font-size:15px;line-height:1.6"">You can also browse the actual photos and videos from the launch:</p>
+
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""margin:16px 0"">
+<tbody><tr><td align=""center"">
+<a href=""https://drive.google.com/drive/folders/1tWu3zrH0zIjJbkfS3hX0tnKXQY-9HTgN"" style=""display:inline-block;background:#f0fafa;border:2px solid #0d9b8a;color:#0d9b8a;font-size:13px;font-weight:bold;padding:10px 20px;border-radius:4px;text-decoration:none"" target=""_blank"">📸 Browse VBV School Photos &amp; Videos</a>
+</td></tr>
+</tbody></table>
+
+<p style=""color:#333;font-size:15px;line-height:1.6"">This is what a WE Smart Lab looks like in action at <strong>{{SCHOOL_NAME}}</strong> — same setup, same results, same teacher training. Fully ready in 30 days from sign-off.</p>
+
+<p style=""color:#333;font-size:15px;line-height:1.6"">Can we bring this to your school? A free demo visit costs nothing and shows you everything.</p>
+
+
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""margin:24px 0"">
+<tbody><tr><td align=""center"">
+<a href=""https://wa.me/919136899925"" style=""display:inline-block;background:#e8352a;color:#ffffff;font-size:15px;font-weight:bold;padding:14px 36px;border-radius:4px;text-decoration:none"" target=""_blank"">📅 Book Free Demo Visit</a>
+</td></tr>
+</tbody></table>
+
+<p style=""color:#333;font-size:15px;line-height:1.6"">Warm regards,<br>
+<strong>Raj</strong><br>
+School Partnerships | RoboPirate<br>
+📞 +91-9136899925 | 🌐 <a href=""http://www.robopirate.in"" target=""_blank"">www.robopirate.in</a></p>
+</td></tr>
+
+
+<tr><td style=""background:linear-gradient(135deg,#0d9b8a,#0bc5b0);padding:16px 32px;text-align:center"">
+<p style=""color:#ffffff;font-size:12px;margin:0"">RoboPirate · Baner, Pune 411045 · <a href=""mailto:info@robopirate.in"" target=""_blank"">info@robopirate.in</a> · +91-9136899925</p>
+</td></tr>
+
+</tbody></table>
+</td></tr>
+</tbody></table>
+</div>
+</div>
+</div>
+",synced,0,2026-05-19 07:17:58
+csr,7,CSR EMAIL 4 — DAY 7 TEMPLATE | April Budget Urgency + All Videos | Replace {{CSR_HEAD_NAME}} {{COMPANY_NAME}},"<div dir=""ltr""><u></u>
+
+
+<div style=""margin:0;padding:0;background:#f4f4f4;font-family:Arial,sans-serif"">
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""background:#f4f4f4;padding:20px 0"">
+<tbody><tr><td align=""center"">
+<table width=""600"" cellpadding=""0"" cellspacing=""0"" style=""background:#ffffff;border-radius:8px;overflow:hidden"">
+
+
+<tbody><tr><td style=""background:linear-gradient(135deg,#0d9b8a,#0bc5b0);padding:28px 32px;text-align:center"">
+<img src=""https://ci3.googleusercontent.com/meips/ADKq_Nan-7xmI2XgjiYAcfIO2Lh6JbDDvSECjdvzYEpIhgYTfOkd7JAmuRrF5LFxKarOs0Ma1QdlY1sbfqtloFG7JyxuyFm4=s0-d-e1-ft#https://robopirate.in/assets/logo-CCM9tiYQ.png"" alt=""RoboPirate"" width=""160"" style=""display:block;margin:0 auto 12px"">
+<p style=""color:#ffffff;font-size:13px;margin:0;letter-spacing:1px;text-transform:uppercase"">STEAM · AI · LABS FOR SCHOOLS · Schedule VII</p>
+</td></tr>
+
+
+<tr><td style=""background:#e8352a;padding:10px 32px;text-align:center"">
+<p style=""color:#ffffff;font-size:13px;font-weight:bold;margin:0;letter-spacing:0.5px"">⚡ FY27 CSR BUDGETS LOCK APRIL 30 — ACT NOW</p>
+</td></tr>
+
+
+<tr><td style=""background:#1a6b6b;padding:12px 32px;text-align:center"">
+<table width=""100%"" cellpadding=""0"" cellspacing=""0""><tbody><tr>
+<td style=""color:#f5a623;font-size:18px;font-weight:bold;text-align:center"">85+<br><span style=""color:#ffffff;font-size:11px;font-weight:normal"">CSR Labs</span></td>
+<td style=""color:#ffffff;font-size:20px;text-align:center"">·</td>
+<td style=""color:#f5a623;font-size:18px;font-weight:bold;text-align:center"">65,000+<br><span style=""color:#ffffff;font-size:11px;font-weight:normal"">Students</span></td>
+<td style=""color:#ffffff;font-size:20px;text-align:center"">·</td>
+<td style=""color:#f5a623;font-size:18px;font-weight:bold;text-align:center"">6<br><span style=""color:#ffffff;font-size:11px;font-weight:normal"">States</span></td>
+<td style=""color:#ffffff;font-size:20px;text-align:center"">·</td>
+<td style=""color:#f5a623;font-size:18px;font-weight:bold;text-align:center"">₹7L<br><span style=""color:#ffffff;font-size:11px;font-weight:normal"">Per School/Yr</span></td>
+</tr></tbody></table>
+</td></tr>
+
+
+<tr><td style=""padding:32px"">
+<p style=""color:#333;font-size:15px;line-height:1.6"">Dear {{CSR_HEAD_NAME}},</p>
+
+<p style=""color:#333;font-size:15px;line-height:1.6"">April 30 is 20 days away. Most companies we speak to finalise their CSR implementation partners before the fiscal year closes — and right now, this is the busiest window we&#39;ve seen in 3 years.</p>
+
+<div style=""background:#fff8f0;border-left:4px solid #e8352a;padding:16px 20px;margin:20px 0;border-radius:4px"">
+<p style=""color:#e8352a;font-weight:bold;font-size:14px;margin:0 0 8px"">Why companies choose RoboPirate for CSR:</p>
+<p style=""color:#555;font-size:14px;margin:0"">✅ One of the only STEAM lab providers with 85+ completed labs<br>
+✅ Fully Schedule VII compliant — Education + Skill Development<br>
+✅ Quarterly impact reports + audit documentation included<br>
+✅ Media coverage: ABP Majha + Star News Marathi<br>
+✅ Deployable in 30 days from sign-off</p>
+</div>
+
+<p style=""color:#333;font-size:15px;line-height:1.6"">Here&#39;s everything you need to evaluate and present internally:</p>
+
+
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""margin:16px 0"">
+<tbody><tr>
+<td width=""32%"" align=""center"" style=""padding:4px"">
+<a href=""https://youtu.be/FJ2_W53WjmA"" style=""display:block;background:#1a6b6b;color:#ffffff;font-size:12px;font-weight:bold;padding:10px 8px;border-radius:4px;text-decoration:none;text-align:center"" target=""_blank"">▶ ABP Majha</a>
+</td>
+<td width=""32%"" align=""center"" style=""padding:4px"">
+<a href=""https://youtube.com/watch?v=iziKPBSfGKU"" style=""display:block;background:#1a6b6b;color:#ffffff;font-size:12px;font-weight:bold;padding:10px 8px;border-radius:4px;text-decoration:none;text-align:center"" target=""_blank"">▶ Star News</a>
+</td>
+<td width=""32%"" align=""center"" style=""padding:4px"">
+<a href=""https://drive.google.com/file/d/1MUlsC87vRbhFaoW0XcX146WBLKYBk448/view"" style=""display:block;background:#1a6b6b;color:#ffffff;font-size:12px;font-weight:bold;padding:10px 8px;border-radius:4px;text-decoration:none;text-align:center"" target=""_blank"">▶ Sangli Workshop</a>
+</td>
+</tr>
+</tbody></table>
+
+<div style=""background:#f0fafa;border-left:4px solid #0d9b8a;padding:16px 20px;margin:20px 0;border-radius:4px"">
+<p style=""color:#0d9b8a;font-weight:bold;font-size:14px;margin:0 0 12px"">📄 Documents for Internal Presentation:</p>
+<table cellpadding=""0"" cellspacing=""4""><tbody><tr>
+<td style=""padding:4px"">
+<a href=""https://drive.google.com/file/d/1vRMeFM22aajc5zfiYhqaev34UVQ87zyU/view"" style=""display:inline-block;background:#0d9b8a;color:#ffffff;font-size:12px;font-weight:bold;padding:8px 14px;border-radius:4px;text-decoration:none"" target=""_blank"">📥 Subscription Plans</a>
+</td>
+<td style=""padding:4px"">
+<a href=""https://drive.google.com/file/d/1HpNdnamA2k3H0xkKr58STEKMNu5RgHPx/view"" style=""display:inline-block;background:#0d9b8a;color:#ffffff;font-size:12px;font-weight:bold;padding:8px 14px;border-radius:4px;text-decoration:none"" target=""_blank"">📥 Sangli Report</a>
+</td>
+<td style=""padding:4px"">
+<a href=""https://drive.google.com/file/d/1g9JJ4_VO_28QKYD7iVVDJZcv9l4uRbZu/view"" style=""display:inline-block;background:#1a6b6b;color:#ffffff;font-size:12px;font-weight:bold;padding:8px 14px;border-radius:4px;text-decoration:none"" target=""_blank"">📥 Company Profile</a>
+</td>
+</tr></tbody></table>
+</div>
+
+<p style=""color:#333;font-size:15px;line-height:1.6"">We can have a tailored proposal for {{COMPANY_NAME}} ready within 48 hours. Just say the word.</p>
+
+
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""margin:24px 0"">
+<tbody><tr><td align=""center"">
+<a href=""https://wa.me/919136899925"" style=""display:inline-block;background:#e8352a;color:#ffffff;font-size:15px;font-weight:bold;padding:14px 36px;border-radius:4px;text-decoration:none"" target=""_blank"">⚡ Get Proposal Before April 30</a>
+</td></tr>
+</tbody></table>
+
+<p style=""color:#333;font-size:15px;line-height:1.6"">Regards,<br>
+<strong>Vikram</strong><br>
+CSR Partnerships | RoboPirate<br>
+📞 +91-9136899925 | 🌐 <a href=""http://www.robopirate.in"" target=""_blank"">www.robopirate.in</a></p>
+</td></tr>
+
+
+<tr><td style=""background:linear-gradient(135deg,#0d9b8a,#0bc5b0);padding:16px 32px;text-align:center"">
+<p style=""color:#ffffff;font-size:12px;margin:0"">RoboPirate · Baner, Pune 411045 · <a href=""mailto:info@robopirate.in"" target=""_blank"">info@robopirate.in</a> · +91-9136899925</p>
+</td></tr>
+
+</tbody></table>
+</td></tr>
+</tbody></table>
+</div>
+</div>
+",synced,0,2026-05-19 07:17:58
+csr,5,CSR EMAIL 3 — DAY 5 TEMPLATE | Sangli Case Study + Reports | Replace {{CSR_HEAD_NAME}} {{COMPANY_NAME}},"<div dir=""ltr""><u></u>
+
+
+<div style=""margin:0;padding:0;background:#f4f4f4;font-family:Arial,sans-serif"">
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""background:#f4f4f4;padding:20px 0"">
+<tbody><tr><td align=""center"">
+<table width=""600"" cellpadding=""0"" cellspacing=""0"" style=""background:#ffffff;border-radius:8px;overflow:hidden"">
+
+
+<tbody><tr><td style=""background:linear-gradient(135deg,#0d9b8a,#0bc5b0);padding:28px 32px;text-align:center"">
+<img src=""https://ci3.googleusercontent.com/meips/ADKq_Nan-7xmI2XgjiYAcfIO2Lh6JbDDvSECjdvzYEpIhgYTfOkd7JAmuRrF5LFxKarOs0Ma1QdlY1sbfqtloFG7JyxuyFm4=s0-d-e1-ft#https://robopirate.in/assets/logo-CCM9tiYQ.png"" alt=""RoboPirate"" width=""160"" style=""display:block;margin:0 auto 12px"">
+<p style=""color:#ffffff;font-size:13px;margin:0;letter-spacing:1px;text-transform:uppercase"">STEAM · AI · LABS FOR SCHOOLS · Schedule VII</p>
+</td></tr>
+
+
+<tr><td style=""background:#1a6b6b;padding:12px 32px;text-align:center"">
+<table width=""100%"" cellpadding=""0"" cellspacing=""0""><tbody><tr>
+<td style=""color:#f5a623;font-size:18px;font-weight:bold;text-align:center"">85+<br><span style=""color:#ffffff;font-size:11px;font-weight:normal"">CSR Labs</span></td>
+<td style=""color:#ffffff;font-size:20px;text-align:center"">·</td>
+<td style=""color:#f5a623;font-size:18px;font-weight:bold;text-align:center"">65,000+<br><span style=""color:#ffffff;font-size:11px;font-weight:normal"">Students</span></td>
+<td style=""color:#ffffff;font-size:20px;text-align:center"">·</td>
+<td style=""color:#f5a623;font-size:18px;font-weight:bold;text-align:center"">6<br><span style=""color:#ffffff;font-size:11px;font-weight:normal"">States</span></td>
+<td style=""color:#ffffff;font-size:20px;text-align:center"">·</td>
+<td style=""color:#f5a623;font-size:18px;font-weight:bold;text-align:center"">₹7L<br><span style=""color:#ffffff;font-size:11px;font-weight:normal"">Per School/Yr</span></td>
+</tr></tbody></table>
+</td></tr>
+
+
+<tr><td style=""padding:32px"">
+<p style=""color:#333;font-size:15px;line-height:1.6"">Dear {{CSR_HEAD_NAME}},</p>
+
+<p style=""color:#333;font-size:15px;line-height:1.6"">I want to share a case study today — a real CSR-funded program we ran in Sangli district, Maharashtra — 15 schools, 15 days, thousands of students.</p>
+
+<p style=""color:#333;font-size:15px;line-height:1.6"">Watch what happened on the ground:</p>
+
+
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""margin:16px 0"">
+<tbody><tr><td align=""center"">
+<a href=""https://drive.google.com/file/d/1MUlsC87vRbhFaoW0XcX146WBLKYBk448/view"" style=""display:inline-block;background:#1a6b6b;color:#ffffff;font-size:14px;font-weight:bold;padding:12px 28px;border-radius:4px;text-decoration:none"" target=""_blank"">▶ Watch Sangli 15-Day Workshop Video</a>
+</td></tr>
+</tbody></table>
+
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""margin:8px 0 20px"">
+<tbody><tr><td align=""center"">
+<a href=""https://youtube.com/watch?v=iziKPBSfGKU"" style=""display:inline-block;background:#1a6b6b;color:#ffffff;font-size:14px;font-weight:bold;padding:12px 28px;border-radius:4px;text-decoration:none"" target=""_blank"">▶ Star News Marathi — Media Coverage</a>
+</td></tr>
+</tbody></table>
+
+<div style=""background:#f0fafa;border-left:4px solid #0d9b8a;padding:16px 20px;margin:20px 0;border-radius:4px"">
+<p style=""color:#0d9b8a;font-weight:bold;font-size:14px;margin:0 0 8px"">📄 Complete Sangli Case Study — Phase 1 + Phase 2</p>
+<p style=""color:#555;font-size:14px;margin:0 0 12px"">Full documentation: schools covered, students trained, hours delivered, teacher feedback, impact photos, and compliance reporting.</p>
+<table cellpadding=""0"" cellspacing=""0""><tbody><tr>
+<td style=""padding-right:12px"">
+<a href=""https://drive.google.com/file/d/1HpNdnamA2k3H0xkKr58STEKMNu5RgHPx/view"" style=""display:inline-block;background:#0d9b8a;color:#ffffff;font-size:13px;font-weight:bold;padding:10px 16px;border-radius:4px;text-decoration:none"" target=""_blank"">📥 Phase 1 Report</a>
+</td>
+<td style=""padding-right:12px"">
+<a href=""https://drive.google.com/file/d/1pKSm1WPlPk-we4aC-uhqxEy8w-BYygSN/view"" style=""display:inline-block;background:#0d9b8a;color:#ffffff;font-size:13px;font-weight:bold;padding:10px 16px;border-radius:4px;text-decoration:none"" target=""_blank"">📥 Phase 2 Report</a>
+</td>
+<td>
+<a href=""https://drive.google.com/file/d/1d7EEtC8YitbSj7U6ivHf_6WtUGuylT-B/view"" style=""display:inline-block;background:#1a6b6b;color:#ffffff;font-size:13px;font-weight:bold;padding:10px 16px;border-radius:4px;text-decoration:none"" target=""_blank"">📥 VBV Transparency Report</a>
+</td>
+</tr></tbody></table>
+</div>
+
+<p style=""color:#333;font-size:15px;line-height:1.6"">You can also browse all photos and videos from the Sangli event directly:</p>
+
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""margin:16px 0"">
+<tbody><tr><td align=""center"">
+<a href=""https://drive.google.com/drive/folders/15sc5iOIKTBZyenb2rCpGVAK1lExcG5BC"" style=""display:inline-block;background:#f0fafa;border:2px solid #0d9b8a;color:#0d9b8a;font-size:13px;font-weight:bold;padding:10px 20px;border-radius:4px;text-decoration:none"" target=""_blank"">📸 Browse Sangli Event Photos &amp; Videos</a>
+</td></tr>
+</tbody></table>
+
+<p style=""color:#333;font-size:15px;line-height:1.6"">This is the quality of execution and documentation {{COMPANY_NAME}} can expect. Every report is audit-ready. Every number is verified.</p>
+
+<p style=""color:#333;font-size:15px;line-height:1.6"">Shall we put together a proposal for your FY27 budget?</p>
+
+
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""margin:24px 0"">
+<tbody><tr><td align=""center"">
+<a href=""https://wa.me/919136899925"" style=""display:inline-block;background:#e8352a;color:#ffffff;font-size:15px;font-weight:bold;padding:14px 36px;border-radius:4px;text-decoration:none"" target=""_blank"">📋 Request CSR Proposal</a>
+</td></tr>
+</tbody></table>
+
+<p style=""color:#333;font-size:15px;line-height:1.6"">Regards,<br>
+<strong>Vikram</strong><br>
+CSR Partnerships | RoboPirate<br>
+📞 +91-9136899925 | 🌐 <a href=""http://www.robopirate.in"" target=""_blank"">www.robopirate.in</a></p>
+</td></tr>
+
+
+<tr><td style=""background:linear-gradient(135deg,#0d9b8a,#0bc5b0);padding:16px 32px;text-align:center"">
+<p style=""color:#ffffff;font-size:12px;margin:0"">RoboPirate · Baner, Pune 411045 · <a href=""mailto:info@robopirate.in"" target=""_blank"">info@robopirate.in</a> · +91-9136899925</p>
+</td></tr>
+
+</tbody></table>
+</td></tr>
+</tbody></table>
+</div>
+</div>
+",synced,0,2026-05-19 07:17:59
+csr,3,CSR EMAIL 2 — DAY 3 TEMPLATE | Schedule VII Compliance | Replace {{CSR_HEAD_NAME}} {{COMPANY_NAME}},"<div dir=""ltr""><u></u>
+
+
+<div style=""margin:0;padding:0;background:#f4f4f4;font-family:Arial,sans-serif"">
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""background:#f4f4f4;padding:20px 0"">
+<tbody><tr><td align=""center"">
+<table width=""600"" cellpadding=""0"" cellspacing=""0"" style=""background:#ffffff;border-radius:8px;overflow:hidden"">
+
+
+<tbody><tr><td style=""background:linear-gradient(135deg,#0d9b8a,#0bc5b0);padding:28px 32px;text-align:center"">
+<img src=""https://ci3.googleusercontent.com/meips/ADKq_Nan-7xmI2XgjiYAcfIO2Lh6JbDDvSECjdvzYEpIhgYTfOkd7JAmuRrF5LFxKarOs0Ma1QdlY1sbfqtloFG7JyxuyFm4=s0-d-e1-ft#https://robopirate.in/assets/logo-CCM9tiYQ.png"" alt=""RoboPirate"" width=""160"" style=""display:block;margin:0 auto 12px"">
+<p style=""color:#ffffff;font-size:13px;margin:0;letter-spacing:1px;text-transform:uppercase"">STEAM · AI · LABS FOR SCHOOLS · Schedule VII</p>
+</td></tr>
+
+
+<tr><td style=""background:#1a6b6b;padding:12px 32px;text-align:center"">
+<table width=""100%"" cellpadding=""0"" cellspacing=""0""><tbody><tr>
+<td style=""color:#f5a623;font-size:18px;font-weight:bold;text-align:center"">85+<br><span style=""color:#ffffff;font-size:11px;font-weight:normal"">CSR Labs</span></td>
+<td style=""color:#ffffff;font-size:20px;text-align:center"">·</td>
+<td style=""color:#f5a623;font-size:18px;font-weight:bold;text-align:center"">65,000+<br><span style=""color:#ffffff;font-size:11px;font-weight:normal"">Students</span></td>
+<td style=""color:#ffffff;font-size:20px;text-align:center"">·</td>
+<td style=""color:#f5a623;font-size:18px;font-weight:bold;text-align:center"">6<br><span style=""color:#ffffff;font-size:11px;font-weight:normal"">States</span></td>
+<td style=""color:#ffffff;font-size:20px;text-align:center"">·</td>
+<td style=""color:#f5a623;font-size:18px;font-weight:bold;text-align:center"">₹7L<br><span style=""color:#ffffff;font-size:11px;font-weight:normal"">Per School/Yr</span></td>
+</tr></tbody></table>
+</td></tr>
+
+
+<tr><td style=""padding:32px"">
+<p style=""color:#333;font-size:15px;line-height:1.6"">Dear {{CSR_HEAD_NAME}},</p>
+
+<p style=""color:#333;font-size:15px;line-height:1.6"">I wanted to follow up on my earlier email with something your compliance team will want to see directly.</p>
+
+<div style=""background:#f0fafa;border-left:4px solid #0d9b8a;padding:16px 20px;margin:20px 0;border-radius:4px"">
+<p style=""color:#0d9b8a;font-weight:bold;font-size:14px;margin:0 0 8px"">✅ Schedule VII Compliance — Confirmed</p>
+<p style=""color:#555;font-size:14px;margin:0"">RoboPirate&#39;s STEAM labs qualify under <strong>Schedule VII — Clause (ii): Promotion of Education and Vocational Skills</strong>. Every rupee spent is fully traceable, reported quarterly, and audit-ready.</p>
+</div>
+
+<p style=""color:#333;font-size:15px;line-height:1.6"">Here&#39;s what {{COMPANY_NAME}}&#39;s CSR investment delivers:</p>
+
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""margin:16px 0"">
+<tbody><tr>
+<td width=""50%"" style=""padding:8px;vertical-align:top"">
+<div style=""background:#f0fafa;border-radius:4px;padding:12px;text-align:center"">
+<p style=""color:#f5a623;font-size:22px;font-weight:bold;margin:0"">400–800</p>
+<p style=""color:#555;font-size:12px;margin:4px 0 0"">Students per school/year</p>
+</div>
+</td>
+<td width=""50%"" style=""padding:8px;vertical-align:top"">
+<div style=""background:#f0fafa;border-radius:4px;padding:12px;text-align:center"">
+<p style=""color:#f5a623;font-size:22px;font-weight:bold;margin:0"">120+</p>
+<p style=""color:#555;font-size:12px;margin:4px 0 0"">Lab hours delivered/year</p>
+</div>
+</td>
+</tr>
+<tr>
+<td width=""50%"" style=""padding:8px;vertical-align:top"">
+<div style=""background:#f0fafa;border-radius:4px;padding:12px;text-align:center"">
+<p style=""color:#f5a623;font-size:22px;font-weight:bold;margin:0"">4x</p>
+<p style=""color:#555;font-size:12px;margin:4px 0 0"">Quarterly impact reports</p>
+</div>
+</td>
+<td width=""50%"" style=""padding:8px;vertical-align:top"">
+<div style=""background:#f0fafa;border-radius:4px;padding:12px;text-align:center"">
+<p style=""color:#f5a623;font-size:22px;font-weight:bold;margin:0"">100%</p>
+<p style=""color:#555;font-size:12px;margin:4px 0 0"">NEP 2020 + audit compliant</p>
+</div>
+</td>
+</tr>
+</tbody></table>
+
+<div style=""background:#f0fafa;border-left:4px solid #0d9b8a;padding:16px 20px;margin:20px 0;border-radius:4px"">
+<p style=""color:#0d9b8a;font-weight:bold;font-size:14px;margin:0 0 8px"">📄 Sangli District Impact Report + WSL Brochure</p>
+<p style=""color:#555;font-size:14px;margin:0 0 12px"">See exactly how we ran a 15-school STEAM lab program in Sangli — funded by CSR — with full compliance documentation.</p>
+<table cellpadding=""0"" cellspacing=""0""><tbody><tr>
+<td style=""padding-right:12px"">
+<a href=""https://drive.google.com/file/d/1HpNdnamA2k3H0xkKr58STEKMNu5RgHPx/view"" style=""display:inline-block;background:#0d9b8a;color:#ffffff;font-size:13px;font-weight:bold;padding:10px 16px;border-radius:4px;text-decoration:none"" target=""_blank"">📥 Sangli Impact Report</a>
+</td>
+<td>
+<a href=""https://drive.google.com/file/d/1vRMeFM22aajc5zfiYhqaev34UVQ87zyU/view"" style=""display:inline-block;background:#1a6b6b;color:#ffffff;font-size:13px;font-weight:bold;padding:10px 16px;border-radius:4px;text-decoration:none"" target=""_blank"">📥 WSL Brochure</a>
+</td>
+</tr></tbody></table>
+</div>
+
+<p style=""color:#333;font-size:15px;line-height:1.6"">FY27 CSR budgets are locking before April 30. We&#39;d love to share a tailored proposal for {{COMPANY_NAME}} — one school or ten, we scale to your budget.</p>
+
+
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""margin:24px 0"">
+<tbody><tr><td align=""center"">
+<a href=""https://wa.me/919136899925"" style=""display:inline-block;background:#e8352a;color:#ffffff;font-size:15px;font-weight:bold;padding:14px 36px;border-radius:4px;text-decoration:none"" target=""_blank"">📋 Request CSR Proposal</a>
+</td></tr>
+</tbody></table>
+
+<p style=""color:#333;font-size:15px;line-height:1.6"">Regards,<br>
+<strong>Vikram</strong><br>
+CSR Partnerships | RoboPirate<br>
+📞 +91-9136899925 | 🌐 <a href=""http://www.robopirate.in"" target=""_blank"">www.robopirate.in</a></p>
+</td></tr>
+
+
+<tr><td style=""background:linear-gradient(135deg,#0d9b8a,#0bc5b0);padding:16px 32px;text-align:center"">
+<p style=""color:#ffffff;font-size:12px;margin:0"">RoboPirate · Baner, Pune 411045 · <a href=""mailto:info@robopirate.in"" target=""_blank"">info@robopirate.in</a> · +91-9136899925</p>
+</td></tr>
+
+</tbody></table>
+</td></tr>
+</tbody></table>
+</div>
+</div>
+",synced,0,2026-05-19 07:17:59
+csr,1,CSR EMAIL 1 — DAY 1 TEMPLATE | Replace {{CSR_HEAD_NAME}} {{COMPANY_NAME}} {{OPENING_LINE}},"<!DOCTYPE html>
+<html lang=""en"">
+<head><meta charset=""UTF-8""><meta name=""viewport"" content=""width=device-width,initial-scale=1.0""></head>
+<body style=""margin:0;padding:0;background-color:#f0fafa;font-family:'Arial',sans-serif;"">
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""background-color:#f0fafa;padding:24px 0;""><tr><td align=""center"">
+<table width=""620"" cellpadding=""0"" cellspacing=""0"" style=""background-color:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 4px 16px rgba(13,155,138,0.12);"">
+
+<!-- HEADER -->
+<tr><td style=""background:linear-gradient(135deg,#0D9B8A 0%,#0BC5B0 100%);padding:28px 40px;"">
+<table width=""100%"" cellpadding=""0"" cellspacing=""0""><tr>
+<td valign=""middle"" style=""width:56px;padding-right:14px;""><img src=""https://robopirate.in/assets/logo-CCM9tiYQ.png"" alt=""RoboPirate"" width=""48"" height=""48"" style=""display:block;border-radius:8px;""></td>
+<td valign=""middle"">
+<p style=""margin:0;font-size:22px;font-weight:900;color:#ffffff;"">Robo Pirate</p>
+<p style=""margin:3px 0 0 0;font-size:10px;color:rgba(255,255,255,0.75);letter-spacing:3px;text-transform:uppercase;"">STEAM · AI · LABS FOR SCHOOLS</p>
+</td>
+<td align=""right"" valign=""middle"">
+<table cellpadding=""0"" cellspacing=""0""><tr><td style=""background:rgba(255,255,255,0.15);border-radius:20px;padding:6px 14px;"">
+<p style=""margin:0;font-size:11px;color:#ffffff;font-weight:600;"">Schedule VII · NEP 2020</p>
+</td></tr></table>
+</td>
+</tr></table>
+</td></tr>
+
+<!-- URGENCY BANNER -->
+<tr><td style=""background-color:#E8352A;padding:10px 40px;"">
+<p style=""margin:0;font-size:12px;color:#ffffff;font-weight:700;letter-spacing:0.5px;"">⚡ APRIL 2026 — FY27 CSR BUDGETS LOCKING NOW. ACT BEFORE APRIL 30.</p>
+</td></tr>
+
+<!-- BODY -->
+<tr><td style=""padding:36px 40px 28px 40px;"">
+
+<p style=""margin:0 0 20px 0;font-size:15px;color:#1a1a1a;"">Dear <strong>{{CSR_HEAD_NAME}}</strong>,</p>
+
+<p style=""margin:0 0 18px 0;font-size:15px;color:#333333;line-height:1.8;"">{{OPENING_LINE}}</p>
+
+<p style=""margin:0 0 18px 0;font-size:15px;color:#333333;line-height:1.8;"">We are <strong>RoboPirate</strong> — India's fully managed STEAM + AI lab provider for schools. We've built <strong>85+ labs across 6 states</strong>, reaching <strong>65,000+ students</strong> through CSR partnerships and private school contracts. Every lab is <strong>Schedule VII compliant and NEP 2020 aligned</strong> — your CSR team gets full documentation, measurable impact data, and board-ready reports. Zero execution burden on your team.</p>
+
+<!-- DARK IMPACT BOX -->
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""margin:0 0 24px 0;background-color:#1A6B6B;border-radius:8px;""><tr><td style=""padding:22px 24px;"">
+<p style=""margin:0 0 16px 0;font-size:11px;color:#F5A623;text-transform:uppercase;letter-spacing:2px;font-weight:700;"">Proven Impact — Sangli District, Maharashtra</p>
+<table width=""100%"" cellpadding=""0"" cellspacing=""0""><tr>
+<td align=""center"" style=""border-right:1px solid rgba(255,255,255,0.1);padding:8px 0;"">
+<p style=""margin:0;font-size:26px;font-weight:900;color:#F5A623;"">85+</p>
+<p style=""margin:4px 0 0 0;font-size:10px;color:rgba(255,255,255,0.7);text-transform:uppercase;letter-spacing:1px;"">Smart Labs</p>
+</td>
+<td align=""center"" style=""border-right:1px solid rgba(255,255,255,0.1);padding:8px 0;"">
+<p style=""margin:0;font-size:26px;font-weight:900;color:#F5A623;"">65K+</p>
+<p style=""margin:4px 0 0 0;font-size:10px;color:rgba(255,255,255,0.7);text-transform:uppercase;letter-spacing:1px;"">Students</p>
+</td>
+<td align=""center"" style=""border-right:1px solid rgba(255,255,255,0.1);padding:8px 0;"">
+<p style=""margin:0;font-size:26px;font-weight:900;color:#F5A623;"">6</p>
+<p style=""margin:4px 0 0 0;font-size:10px;color:rgba(255,255,255,0.7);text-transform:uppercase;letter-spacing:1px;"">States</p>
+</td>
+<td align=""center"" style=""padding:8px 0;"">
+<p style=""margin:0;font-size:26px;font-weight:900;color:#F5A623;"">₹7L</p>
+<p style=""margin:4px 0 0 0;font-size:10px;color:rgba(255,255,255,0.7);text-transform:uppercase;letter-spacing:1px;"">Per School/Year</p>
+</td>
+</tr></table>
+</td></tr></table>
+
+<!-- DELIVERABLES BOX -->
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""margin:0 0 24px 0;background-color:#f0fafa;border-left:4px solid #0D9B8A;border-radius:0 6px 6px 0;""><tr><td style=""padding:16px 20px;"">
+<p style=""margin:0 0 10px 0;font-size:13px;color:#0D9B8A;font-weight:700;"">{{COMPANY_NAME}}'s CSR investment delivers:</p>
+<p style=""margin:0;font-size:13px;color:#444444;line-height:2.0;"">
+✅ &nbsp;Full STEAM lab setup — zero execution burden on your team<br>
+✅ &nbsp;Dedicated trained teacher deployed per school<br>
+✅ &nbsp;LMS dashboard — measurable impact data for your CSR reports<br>
+✅ &nbsp;Schedule VII + NEP 2020 compliant documentation<br>
+✅ &nbsp;Annual impact report with verified student outcome data
+</p>
+</td></tr></table>
+
+<p style=""margin:0 0 28px 0;font-size:15px;color:#333333;line-height:1.8;"">FY27 CSR budgets are locking in April. I'd love <strong>20 minutes</strong> to show you what a RoboPirate lab looks like on the ground — and what it could mean for <strong>{{COMPANY_NAME}}</strong>'s education CSR portfolio.</p>
+
+<!-- CTA BUTTONS -->
+<table cellpadding=""0"" cellspacing=""0"" style=""margin:0 0 24px 0;""><tr>
+<td style=""background-color:#E8352A;border-radius:6px;"">
+<a href=""https://wa.me/919136899925"" style=""display:inline-block;padding:14px 32px;font-size:14px;font-weight:700;color:#ffffff;text-decoration:none;"">📞 Schedule 20-Min Call →</a>
+</td>
+<td style=""width:14px;""></td>
+<td style=""border:2px solid #0D9B8A;border-radius:6px;"">
+<a href=""https://drive.google.com/file/d/1HpNdnamA2k3H0xkKr58STEKMNu5RgHPx/view"" style=""display:inline-block;padding:12px 20px;font-size:13px;font-weight:600;color:#0D9B8A;text-decoration:none;"">📄 View Sangli Impact Report</a>
+</td>
+</tr></table>
+
+<!-- MEDIA -->
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""margin:0 0 28px 0;background-color:#f8f8f8;border-radius:6px;""><tr><td style=""padding:16px 20px;"">
+<p style=""margin:0 0 10px 0;font-size:11px;color:#888888;text-transform:uppercase;letter-spacing:1.5px;"">See Our Work in Action</p>
+<table cellpadding=""0"" cellspacing=""0""><tr>
+<td style=""padding-right:20px;""><a href=""https://drive.google.com/file/d/1MUlsC87vRbhFaoW0XcX146WBLKYBk448/view"" style=""font-size:13px;color:#0D9B8A;text-decoration:none;font-weight:600;"">▶ Sangli 15-Day Workshop</a></td>
+<td style=""padding-right:20px;""><a href=""https://youtu.be/FJ2_W53WjmA"" style=""font-size:13px;color:#0D9B8A;text-decoration:none;font-weight:600;"">▶ ABP Majha Coverage</a></td>
+<td><a href=""https://youtube.com/watch?v=iziKPBSfGKU"" style=""font-size:13px;color:#0D9B8A;text-decoration:none;font-weight:600;"">▶ Star News Marathi</a></td>
+</tr></table>
+</td></tr></table>
+
+<!-- SIGN OFF -->
+<p style=""margin:0 0 4px 0;font-size:14px;color:#1a1a1a;font-weight:700;"">Warm regards,<br>Omkar Singh</p>
+<p style=""margin:6px 0 0 0;font-size:13px;color:#666666;line-height:1.9;"">
+Founder, RoboPirate<br>
+📞 +91-9136899925<br>
+✉ info@robopirate.in<br>
+🌐 www.robopirate.in
+</p>
+
+</td></tr>
+
+<!-- FOOTER -->
+<tr><td style=""background:linear-gradient(135deg,#0D9B8A 0%,#0BC5B0 100%);padding:18px 40px;"">
+<table width=""100%"" cellpadding=""0"" cellspacing=""0""><tr>
+<td><p style=""margin:0;font-size:11px;color:rgba(255,255,255,0.7);"">RoboPirate | 81/1, Lalit Estate, Near Orchid School, Baner, Pune 411045</p></td>
+<td align=""right""><a href=""https://www.robopirate.in"" style=""font-size:11px;color:#ffffff;text-decoration:none;font-weight:600;"">www.robopirate.in</a></td>
+</tr></table>
+</td></tr>
+
+</table></td></tr></table>
+</body></html>",synced,0,2026-05-19 07:17:59
+school,1,{{SCHOOL_NAME}} — Transform Your School with Hands-On STEM Labs,"<!DOCTYPE html>
+<html>
+<head><meta charset=""UTF-8""><meta name=""viewport"" content=""width=device-width, initial-scale=1.0""></head>
+<body style=""margin:0;padding:0;font-family:'Segoe UI',Arial,sans-serif;background:#f5f5f5;"">
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""background:#f5f5f5;"">
+<tr><td align=""center"" style=""padding:20px 0;"">
+<table width=""600"" cellpadding=""0"" cellspacing=""0"" style=""background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.1);"">
+<tr><td style=""background:linear-gradient(135deg,#0D9B8A,#0BC5B0);padding:20px;text-align:center;"">
+<img src=""https://robopirate.in/assets/logo-CCM9tiYQ.png"" alt=""RoboPirate"" style=""height:50px;margin-bottom:10px;"">
+<h1 style=""color:#ffffff;margin:0;font-size:22px;"">{{SCHOOL_NAME}} — Transform Your School with Hands-On STEM Labs</h1>
+</td></tr>
+<tr><td style=""padding:30px;color:#333;line-height:1.6;"">
+<p>Dear Principal,</p>
+<p>Imagine your students building robots, coding drones, and exploring AI — all within your school walls. For the 2026-27 academic year, this is no longer optional.</p>
+<p><strong>WE Smart Lab</strong> by RoboPirate brings cutting-edge STEAM/AI education to Indian schools. We're already in <strong style=""color:#F5A623;"">85+ labs</strong> across <strong style=""color:#F5A623;"">6 states</strong>, impacting <strong style=""color:#F5A623;"">65,000+ students</strong>.</p>
+<p>Everything is included — lab setup, 120+ DIY kits, full-time trained teacher, NEP 2020 aligned curriculum, LMS portal, and ongoing support. Schools simply open the door; we handle the rest.</p>
+<p style=""margin:20px 0;""><a href=""https://drive.google.com/file/d/1vRMeFM22aajc5zfiYhqaev34UVQ87zyU/view"" style=""display:inline-block;background:#0D9B8A;color:#ffffff;padding:12px 25px;border-radius:25px;text-decoration:none;font-weight:bold;"">📄 Download WSL Brochure</a></p>
+<p style=""margin:15px 0;""><a href=""https://drive.google.com/file/d/1KPrC2IpdooxazGJiyVe79JgyWlJbOxzu/view"" style=""display:inline-block;background:#E8352A;color:#ffffff;padding:10px 20px;border-radius:20px;text-decoration:none;"">▶ Watch WSL Overview Video</a></p>
+<p style=""margin:15px 0;""><a href=""https://youtu.be/FJ2_W53WjmA"" style=""display:inline-block;background:#1A6B6B;color:#ffffff;padding:10px 20px;border-radius:20px;text-decoration:none;"">▶ ABP Majha Media Coverage</a></p>
+<p style=""margin:15px 0;""><a href=""https://www.instagram.com/reel/DMe2HzqofAk/"" style=""display:inline-block;background:#F5A623;color:#ffffff;padding:10px 20px;border-radius:20px;text-decoration:none;"">▶ WSL Instagram Reel</a></p>
+<p>Would you be open to a 15-minute call to discuss how WSL can transform your school?</p>
+<p>Best regards,<br><strong>RoboPirate Team</strong><br>WSL Initiative</p>
+</td></tr>
+<tr><td style=""background:#1A6B6B;padding:20px;text-align:center;"">
+<p style=""color:#ffffff;margin:0 0 10px;font-size:14px;"">
+<strong style=""color:#F5A623;"">85+</strong> Labs | 
+<strong style=""color:#F5A623;"">65K+</strong> Students | 
+<strong style=""color:#F5A623;"">6</strong> States
+</p>
+<a href=""https://wa.me/919136899925"" style=""display:inline-block;background:#E8352A;color:#ffffff;padding:12px 30px;border-radius:25px;text-decoration:none;font-weight:bold;"">Chat on WhatsApp</a>
+</td></tr>
+<tr><td style=""background:#0a1a1a;padding:15px;text-align:center;font-size:12px;color:#888;"">
+&copy; 2026 RoboPirate | WE Smart Lab | <a href=""https://robopirate.in"" style=""color:#0D9B8A;"">robopirate.in</a>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>",generated,0,2026-05-19 10:23:47
+school,3,{{SCHOOL_NAME}} — NEP 2020 Compliance: Is Your School Ready?,"<!DOCTYPE html>
+<html>
+<head><meta charset=""UTF-8""><meta name=""viewport"" content=""width=device-width, initial-scale=1.0""></head>
+<body style=""margin:0;padding:0;font-family:'Segoe UI',Arial,sans-serif;background:#f5f5f5;"">
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""background:#f5f5f5;"">
+<tr><td align=""center"" style=""padding:20px 0;"">
+<table width=""600"" cellpadding=""0"" cellspacing=""0"" style=""background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.1);"">
+<tr><td style=""background:linear-gradient(135deg,#0D9B8A,#0BC5B0);padding:20px;text-align:center;"">
+<img src=""https://robopirate.in/assets/logo-CCM9tiYQ.png"" alt=""RoboPirate"" style=""height:50px;margin-bottom:10px;"">
+<h1 style=""color:#ffffff;margin:0;font-size:22px;"">{{SCHOOL_NAME}} — NEP 2020 Compliance: Is Your School Ready?</h1>
+</td></tr>
+<tr><td style=""padding:30px;color:#333;line-height:1.6;"">
+<p>Dear Principal,</p>
+<p>With NEP 2020 now in full implementation and the 2026-27 academic year approaching, schools across India are racing to comply with experiential learning and coding mandates from Class 6.</p>
+<p><strong>The question is:</strong> Will your school lead this change or play catch-up?</p>
+<p>WSL provides:</p>
+<ul>
+<li>Ready-to-deploy STEM labs</li>
+<li>NEP-aligned curriculum</li>
+<li>Teacher training programs</li>
+<li>Progress tracking dashboards</li>
+</ul>
+<p style=""margin:20px 0;""><a href=""https://youtu.be/FJ2_W53WjmA"" style=""display:inline-block;background:#E8352A;color:#ffffff;padding:10px 20px;border-radius:20px;text-decoration:none;"">▶ ABP Majha Coverage on NEP & STEM</a></p>
+<p style=""margin:15px 0;""><a href=""https://www.instagram.com/reel/DMe2HzqofAk/"" style=""display:inline-block;background:#F5A623;color:#ffffff;padding:10px 20px;border-radius:20px;text-decoration:none;"">▶ WSL Instagram Reel</a></p>
+<p>Let's discuss how your school can be NEP-ready this academic year.</p>
+<p>Best regards,<br><strong>RoboPirate Team</strong><br>WSL Initiative</p>
+</td></tr>
+<tr><td style=""background:#1A6B6B;padding:20px;text-align:center;"">
+<p style=""color:#ffffff;margin:0 0 10px;font-size:14px;"">
+<strong style=""color:#F5A623;"">85+</strong> Labs | 
+<strong style=""color:#F5A623;"">65K+</strong> Students | 
+<strong style=""color:#F5A623;"">6</strong> States
+</p>
+<a href=""https://wa.me/919136899925"" style=""display:inline-block;background:#E8352A;color:#ffffff;padding:12px 30px;border-radius:25px;text-decoration:none;font-weight:bold;"">Chat on WhatsApp</a>
+</td></tr>
+<tr><td style=""background:#0a1a1a;padding:15px;text-align:center;font-size:12px;color:#888;"">
+&copy; 2026 RoboPirate | WE Smart Lab | <a href=""https://robopirate.in"" style=""color:#0D9B8A;"">robopirate.in</a>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>",generated,0,2026-05-19 07:18:06
+school,7,{{SCHOOL_NAME}} — Join 85+ Schools Already Using WSL,"<!DOCTYPE html>
+<html>
+<head><meta charset=""UTF-8""><meta name=""viewport"" content=""width=device-width, initial-scale=1.0""></head>
+<body style=""margin:0;padding:0;font-family:'Segoe UI',Arial,sans-serif;background:#f5f5f5;"">
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""background:#f5f5f5;"">
+<tr><td align=""center"" style=""padding:20px 0;"">
+<table width=""600"" cellpadding=""0"" cellspacing=""0"" style=""background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.1);"">
+<tr><td style=""background:linear-gradient(135deg,#0D9B8A,#0BC5B0);padding:20px;text-align:center;"">
+<img src=""https://robopirate.in/assets/logo-CCM9tiYQ.png"" alt=""RoboPirate"" style=""height:50px;margin-bottom:10px;"">
+<h1 style=""color:#ffffff;margin:0;font-size:22px;"">{{SCHOOL_NAME}} — Join 85+ Schools Already Using WSL</h1>
+</td></tr>
+<tr><td style=""padding:30px;color:#333;line-height:1.6;"">
+<p>Dear Principal,</p>
+<p>You're not alone in this journey. <strong>85+ schools</strong> across Maharashtra, Karnataka, Gujarat, and more have already chosen WSL.</p>
+<p>Here's what principals are saying:</p>
+<blockquote style=""border-left:4px solid #0D9B8A;padding-left:15px;color:#555;"">
+""WSL transformed how our students engage with science. The hands-on approach is exactly what NEP envisioned.""<br>
+-- Principal, Pune District
+</blockquote>
+<p style=""margin:20px 0;""><a href=""https://drive.google.com/file/d/1g9JJ4_VO_28QKYD7iVVDJZcv9l4uRbZu/view"" style=""display:inline-block;background:#0D9B8A;color:#ffffff;padding:12px 25px;border-radius:25px;text-decoration:none;font-weight:bold;"">📄 Download RoboPirate Company Profile</a></p>
+<p style=""margin:15px 0;""><a href=""https://youtu.be/FJ2_W53WjmA"" style=""display:inline-block;background:#E8352A;color:#ffffff;padding:10px 20px;border-radius:20px;text-decoration:none;"">▶ ABP Majha Coverage</a></p>
+<p style=""margin:15px 0;""><a href=""https://youtube.com/watch?v=iziKPBSfGKU"" style=""display:inline-block;background:#1A6B6B;color:#ffffff;padding:10px 20px;border-radius:20px;text-decoration:none;"">▶ Star News Marathi</a></p>
+<p style=""margin:15px 0;""><a href=""https://www.instagram.com/reel/DMe2HzqofAk/"" style=""display:inline-block;background:#F5A623;color:#ffffff;padding:10px 20px;border-radius:20px;text-decoration:none;"">▶ WSL Instagram Reel</a></p>
+<p>Ready to join them?</p>
+<p>Best regards,<br><strong>RoboPirate Team</strong><br>WSL Initiative</p>
+</td></tr>
+<tr><td style=""background:#1A6B6B;padding:20px;text-align:center;"">
+<p style=""color:#ffffff;margin:0 0 10px;font-size:14px;"">
+<strong style=""color:#F5A623;"">85+</strong> Labs | 
+<strong style=""color:#F5A623;"">65K+</strong> Students | 
+<strong style=""color:#F5A623;"">6</strong> States
+</p>
+<a href=""https://wa.me/919136899925"" style=""display:inline-block;background:#E8352A;color:#ffffff;padding:12px 30px;border-radius:25px;text-decoration:none;font-weight:bold;"">Chat on WhatsApp</a>
+</td></tr>
+<tr><td style=""background:#0a1a1a;padding:15px;text-align:center;font-size:12px;color:#888;"">
+&copy; 2026 RoboPirate | WE Smart Lab | <a href=""https://robopirate.in"" style=""color:#0D9B8A;"">robopirate.in</a>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>",generated,0,2026-05-19 07:18:07
+school,10,"{{PRINCIPAL_NAME}}, Final Call: WSL Subscription Plans for {{SCHOOL_NAME}}","<!DOCTYPE html>
+<html>
+<head><meta charset=""UTF-8""><meta name=""viewport"" content=""width=device-width, initial-scale=1.0""></head>
+<body style=""margin:0;padding:0;font-family:'Segoe UI',Arial,sans-serif;background:#f5f5f5;"">
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""background:#f5f5f5;"">
+<tr><td align=""center"" style=""padding:20px 0;"">
+<table width=""600"" cellpadding=""0"" cellspacing=""0"" style=""background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.1);"">
+<tr><td style=""background:linear-gradient(135deg,#0D9B8A,#0BC5B0);padding:20px;text-align:center;"">
+<img src=""https://robopirate.in/assets/logo-CCM9tiYQ.png"" alt=""RoboPirate"" style=""height:50px;margin-bottom:10px;"">
+<h1 style=""color:#ffffff;margin:0;font-size:22px;"">{{PRINCIPAL_NAME}}, Final Call: WSL Subscription Plans for {{SCHOOL_NAME}}</h1>
+</td></tr>
+<tr><td style=""padding:30px;color:#333;line-height:1.6;"">
+<p>Dear Principal,</p>
+<p>This is my final email for the 2026-27 academic year planning. With admissions season approaching, I don't want your students to miss this opportunity.</p>
+<p>We've prepared flexible WE Smart Lab subscription plans for schools of all sizes:</p>
+<ul>
+<li><strong>WSL20:</strong> 400 students | 1 trainer | 1 lab | ~Rs.8.2L/year</li>
+<li><strong>WSL30:</strong> 600 students | 1 trainer | 1 lab | ~Rs.10.2L/year</li>
+<li><strong>WSL30 V.2:</strong> 800 students | 2 trainers | 1 lab | ~Rs.12.8L/year</li>
+</ul>
+<p>Every plan includes: complete lab setup, 120+ DIY kits, full-time trained teacher, NEP 2020 + NCF aligned curriculum, LMS portal, assessments, and ongoing support.</p>
+<p><a href=""https://drive.google.com/file/d/1vRMeFM22aajc5zfiYhqaev34UVQ87zyU/view"" style=""color:#0D9B8A;"">📄 View WE Smart Lab Subscription Plans</a></p>
+<p>Or explore everything at <a href=""https://robopirate.in"" style=""color:#0D9B8A;"">robopirate.in</a></p>
+<p>If now isn't the right time, I understand. But if you're even slightly curious, let's have a 10-minute conversation. No obligation.</p>
+<p>Click the WhatsApp button below or reply to this email.</p>
+<p>Best regards,<br><strong>RoboPirate Team</strong><br>WSL Initiative</p>
+</td></tr>
+<tr><td style=""background:#1A6B6B;padding:20px;text-align:center;"">
+<p style=""color:#ffffff;margin:0 0 10px;font-size:14px;"">
+<strong style=""color:#F5A623;"">85+</strong> Labs | 
+<strong style=""color:#F5A623;"">65K+</strong> Students | 
+<strong style=""color:#F5A623;"">6</strong> States
+</p>
+<a href=""https://wa.me/919136899925"" style=""display:inline-block;background:#E8352A;color:#ffffff;padding:12px 30px;border-radius:25px;text-decoration:none;font-weight:bold;"">Chat on WhatsApp</a>
+</td></tr>
+<tr><td style=""background:#0a1a1a;padding:15px;text-align:center;font-size:12px;color:#888;"">
+&copy; 2026 RoboPirate | WE Smart Lab | <a href=""https://robopirate.in"" style=""color:#0D9B8A;"">robopirate.in</a>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>",generated,1,2026-05-19 07:18:08
+csr,10,"{{CSR_HEAD_NAME}}, Partner with RoboPirate: Company Profile for {{COMPANY_NAME}}","<!DOCTYPE html>
+<html>
+<head><meta charset=""UTF-8""><meta name=""viewport"" content=""width=device-width, initial-scale=1.0""></head>
+<body style=""margin:0;padding:0;font-family:'Segoe UI',Arial,sans-serif;background:#f5f5f5;"">
+<table width=""100%"" cellpadding=""0"" cellspacing=""0"" style=""background:#f5f5f5;"">
+<tr><td align=""center"" style=""padding:20px 0;"">
+<table width=""600"" cellpadding=""0"" cellspacing=""0"" style=""background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.1);"">
+<tr><td style=""background:linear-gradient(135deg,#0D9B8A,#0BC5B0);padding:20px;text-align:center;"">
+<img src=""https://robopirate.in/assets/logo-CCM9tiYQ.png"" alt=""RoboPirate"" style=""height:50px;margin-bottom:10px;"">
+<h1 style=""color:#ffffff;margin:0;font-size:22px;"">{{CSR_HEAD_NAME}}, Partner with RoboPirate: Company Profile for {{COMPANY_NAME}}</h1>
+</td></tr>
+<tr><td style=""padding:30px;color:#333;line-height:1.6;"">
+<p>Dear CSR Head,</p>
+<p>This is my final outreach for FY 2026-27 planning. With budgets being locked in May 2026, I respect your time and decision.</p>
+<p>If you've been considering STEM education as part of your CSR strategy, let's not let another quarter pass.</p>
+<p>Download our full credentials:</p>
+<p><a href=""https://drive.google.com/file/d/1g9JJ4_VO_28QKYD7iVVDJZcv9l4uRbZu/view"" style=""color:#0D9B8A;"">📄 RoboPirate Company Profile</a></p>
+<p><a href=""https://drive.google.com/file/d/1cvi4p8IHgx1MekanVRHN3Fo4Lk9vbubX/view"" style=""color:#0D9B8A;"">📦 Kits In The Box — Product Catalog</a></p>
+<p>Learn more at <a href=""https://robopirate.in"" style=""color:#0D9B8A;"">robopirate.in</a> or message us directly on WhatsApp below.</p>
+<p>I'm available for a 20-minute presentation at your office or via video call. No pitch, just facts and possibilities.</p>
+<p>Click the WhatsApp button below or simply reply ""Interested"" and I'll send available slots.</p>
+<p>Best regards,<br><strong>RoboPirate CSR Team</strong></p>
+</td></tr>
+<tr><td style=""background:#1A6B6B;padding:20px;text-align:center;"">
+<p style=""color:#ffffff;margin:0 0 10px;font-size:14px;"">
+<strong style=""color:#F5A623;"">85+</strong> Labs | 
+<strong style=""color:#F5A623;"">65K+</strong> Students | 
+<strong style=""color:#F5A623;"">6</strong> States
+</p>
+<a href=""https://wa.me/919136899925"" style=""display:inline-block;background:#E8352A;color:#ffffff;padding:12px 30px;border-radius:25px;text-decoration:none;font-weight:bold;"">Chat on WhatsApp</a>
+</td></tr>
+<tr><td style=""background:#0a1a1a;padding:15px;text-align:center;font-size:12px;color:#888;"">
+&copy; 2026 RoboPirate | WE Smart Lab | <a href=""https://robopirate.in"" style=""color:#0D9B8A;"">robopirate.in</a>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>",generated,1,2026-05-19 07:18:09
