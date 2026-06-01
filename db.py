@@ -1,7 +1,7 @@
 """
-db.py -- RoboPirate Campaign Database v5.1
+db.py -- RoboPirate Campaign Database v5.2
 Dual database: SQLite (local) + PostgreSQL (Render cloud)
-Auto-detects via DATABASE_URL environment variable.
+Fixed: psycopg2 cursor support, reserved keyword handling
 """
 
 import os
@@ -30,15 +30,13 @@ class Database:
         self._init_tables()
         self._migrate_schema()
 
-    def _placeholder(self):
-        """Return placeholder character for current DB."""
-        return '%s' if self.is_postgres else '?'
-
     def _execute(self, sql, params=()):
         """Execute SQL with auto-converted placeholders."""
         if self.is_postgres:
-            # Convert ? to %s for PostgreSQL
             sql = sql.replace('?', '%s')
+            cur = self.conn.cursor()
+            cur.execute(sql, params)
+            return cur
         return self.conn.execute(sql, params)
 
     def execute(self, sql, params=()):
@@ -216,7 +214,7 @@ class Database:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 action TEXT NOT NULL,
                 details TEXT,
-                user TEXT DEFAULT 'system',
+                "user" TEXT DEFAULT 'system',
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             );
             CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action);
@@ -230,7 +228,6 @@ class Database:
     def _init_postgres(self):
         cur = self.conn.cursor()
 
-        # PostgreSQL schema (uses SERIAL instead of AUTOINCREMENT)
         tables = [
             """CREATE TABLE IF NOT EXISTS campaigns (
                 id TEXT PRIMARY KEY,
@@ -378,7 +375,7 @@ class Database:
                 id SERIAL PRIMARY KEY,
                 action TEXT NOT NULL,
                 details TEXT,
-                created_by TEXT DEFAULT 'system',
+                "user" TEXT DEFAULT 'system',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )""",
             """CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action)""",
@@ -387,7 +384,6 @@ class Database:
         for sql in tables:
             cur.execute(sql)
 
-        # Insert default campaigns
         for seq_id, name, audience in [("school","SCHOOL","private_school"), ("csr","CSR","csr")]:
             cur.execute("""
                 INSERT INTO campaigns (id, name, audience) VALUES (%s, %s, %s)
@@ -399,7 +395,6 @@ class Database:
 
     def _migrate_schema(self):
         """Auto-migrate database schema when code updates."""
-        # Add parent_batch_id to batches if missing
         try:
             self.execute("SELECT parent_batch_id FROM batches LIMIT 1")
         except:
@@ -408,7 +403,6 @@ class Database:
             self.commit()
             print("[DB] Migration complete: parent_batch_id added")
 
-        # Add batched flag to recipients if missing
         try:
             self.execute("SELECT batched FROM recipients LIMIT 1")
         except:
@@ -417,14 +411,12 @@ class Database:
             self.execute("CREATE INDEX IF NOT EXISTS idx_recipients_batched ON recipients(batched)")
             self.commit()
             print("[DB] Migration complete: batched flag added")
-            # Fix existing batch recipients
             self.execute("""
                 UPDATE recipients SET batched=1 
                 WHERE id IN (SELECT DISTINCT recipient_id FROM batch_recipients)
             """)
             self.commit()
 
-        # Add campaign_id to batches if missing
         try:
             self.execute("SELECT campaign_id FROM batches LIMIT 1")
         except:
@@ -432,6 +424,30 @@ class Database:
             self.execute("ALTER TABLE batches ADD COLUMN campaign_id INTEGER")
             self.commit()
             print("[DB] Migration complete: campaign_id added")
+
+    def _fetchall(self, cursor):
+        """Fetch all rows from cursor, return as list of dicts."""
+        if self.is_postgres:
+            rows = cursor.fetchall()
+            if not rows:
+                return []
+            # Get column names from cursor description
+            cols = [desc[0] for desc in cursor.description]
+            return [dict(zip(cols, row)) for row in rows]
+        else:
+            return [dict(r) for r in cursor.fetchall()]
+
+    def _fetchone(self, cursor):
+        """Fetch one row from cursor."""
+        if self.is_postgres:
+            row = cursor.fetchone()
+            if not row:
+                return None
+            cols = [desc[0] for desc in cursor.description]
+            return dict(zip(cols, row))
+        else:
+            r = cursor.fetchone()
+            return dict(r) if r else None
 
     # ─── RECIPIENTS / POOL ───
     def recipient_add(self, sequence_id, email, name, org, extra_json=None):
@@ -449,14 +465,15 @@ class Database:
             return False, str(e)
 
     def recipient_get_by_sequence(self, sequence_id):
-        rows = self.execute("SELECT * FROM recipients WHERE sequence_id=? ORDER BY id", (sequence_id,)).fetchall()
-        return [dict(r) for r in rows]
+        cur = self.execute("SELECT * FROM recipients WHERE sequence_id=? ORDER BY id", (sequence_id,))
+        return self._fetchall(cur)
 
     def recipient_count(self, sequence_id=None):
         if sequence_id:
-            row = self.execute("SELECT COUNT(*) FROM recipients WHERE sequence_id=?", (sequence_id,)).fetchone()
+            cur = self.execute("SELECT COUNT(*) FROM recipients WHERE sequence_id=?", (sequence_id,))
         else:
-            row = self.execute("SELECT COUNT(*) FROM recipients").fetchone()
+            cur = self.execute("SELECT COUNT(*) FROM recipients")
+        row = cur.fetchone()
         return row[0] if row else 0
 
     def recipient_delete(self, recipient_id):
@@ -470,14 +487,15 @@ class Database:
         if limit:
             sql += " LIMIT ?"
             params.append(limit)
-        rows = self.execute(sql, params).fetchall()
-        return [dict(r) for r in rows]
+        cur = self.execute(sql, params)
+        return self._fetchall(cur)
 
     def get_pool_count(self, sequence_id):
-        row = self.execute(
+        cur = self.execute(
             "SELECT COUNT(*) FROM recipients WHERE sequence_id=? AND batched=0", 
             (sequence_id,)
-        ).fetchone()
+        )
+        row = cur.fetchone()
         return row[0] if row else 0
 
     def mark_batched(self, recipient_ids):
@@ -494,6 +512,9 @@ class Database:
         self.execute(f"UPDATE recipients SET batched=0 WHERE id IN ({placeholders})", recipient_ids)
         self.commit()
 
+    def _placeholder(self):
+        return '%s' if self.is_postgres else '?'
+
     # ─── BATCHES ───
     def batch_create(self, name, sequence_id, scheduled_at=None, timezone='Asia/Kolkata', 
                      send_rate=0, stagger_minutes=0, day_offset=1, parent_batch_id=None, campaign_id=None):
@@ -503,9 +524,8 @@ class Database:
         """, (name, sequence_id, scheduled_at, timezone, send_rate, stagger_minutes, day_offset, parent_batch_id, campaign_id))
         self.commit()
         if self.is_postgres:
-            # Get last inserted ID
-            id_row = self.execute("SELECT lastval()").fetchone()
-            return id_row[0]
+            cur.execute("SELECT lastval()")
+            return cur.fetchone()[0]
         return cur.lastrowid
 
     def batch_add_recipient(self, batch_id, recipient_id):
@@ -518,23 +538,23 @@ class Database:
             return False
 
     def batch_get(self, batch_id):
-        row = self.execute("SELECT * FROM batches WHERE id=?", (batch_id,)).fetchone()
-        return dict(row) if row else None
+        cur = self.execute("SELECT * FROM batches WHERE id=?", (batch_id,))
+        return self._fetchone(cur)
 
     def batch_get_all(self, sequence_id=None):
         if sequence_id:
-            rows = self.execute("SELECT * FROM batches WHERE sequence_id=? ORDER BY created_at DESC", (sequence_id,)).fetchall()
+            cur = self.execute("SELECT * FROM batches WHERE sequence_id=? ORDER BY created_at DESC", (sequence_id,))
         else:
-            rows = self.execute("SELECT * FROM batches ORDER BY created_at DESC").fetchall()
-        return [dict(r) for r in rows]
+            cur = self.execute("SELECT * FROM batches ORDER BY created_at DESC")
+        return self._fetchall(cur)
 
     def get_running_batches(self):
-        rows = self.execute("SELECT * FROM batches WHERE status='running' ORDER BY created_at").fetchall()
-        return [dict(r) for r in rows]
+        cur = self.execute("SELECT * FROM batches WHERE status='running' ORDER BY created_at")
+        return self._fetchall(cur)
 
     def get_scheduled_batches(self):
-        rows = self.execute("SELECT * FROM batches WHERE status='scheduled' ORDER BY scheduled_at").fetchall()
-        return [dict(r) for r in rows]
+        cur = self.execute("SELECT * FROM batches WHERE status='scheduled' ORDER BY scheduled_at")
+        return self._fetchall(cur)
 
     def batch_update_status(self, batch_id, status):
         self.execute("UPDATE batches SET status=? WHERE id=?", (status, batch_id))
@@ -545,13 +565,13 @@ class Database:
         self.commit()
 
     def batch_get_recipients(self, batch_id):
-        rows = self.execute("""
+        cur = self.execute("""
             SELECT r.*, br.status as batch_status, br.sent_at 
             FROM recipients r 
             JOIN batch_recipients br ON r.id = br.recipient_id 
             WHERE br.batch_id=?
-        """, (batch_id,)).fetchall()
-        return [dict(r) for r in rows]
+        """, (batch_id,))
+        return self._fetchall(cur)
 
     def batch_delete(self, batch_id):
         recipient_ids = [r["id"] for r in self.batch_get_recipients(batch_id)]
@@ -562,14 +582,15 @@ class Database:
         self.commit()
 
     def batch_count_recipients(self, batch_id):
-        row = self.execute("SELECT COUNT(*) FROM batch_recipients WHERE batch_id=?", (batch_id,)).fetchone()
+        cur = self.execute("SELECT COUNT(*) FROM batch_recipients WHERE batch_id=?", (batch_id,))
+        row = cur.fetchone()
         return row[0] if row else 0
 
     def batch_count_by_status(self, batch_id):
-        rows = self.execute("""
+        cur = self.execute("""
             SELECT status, COUNT(*) FROM batch_recipients WHERE batch_id=? GROUP BY status
-        """, (batch_id,)).fetchall()
-        return {r[0]: r[1] for r in rows}
+        """, (batch_id,))
+        return {r[0]: r[1] for r in cur.fetchall()}
 
     # ─── CREATE BATCH FROM POOL ───
     def batch_from_pool(self, name, sequence_id, batch_size, day_offset=1, 
@@ -580,7 +601,8 @@ class Database:
 
         verified_pool = []
         for lead in pool:
-            check = self.execute("SELECT batched FROM recipients WHERE id=?", (lead["id"],)).fetchone()
+            cur = self.execute("SELECT batched FROM recipients WHERE id=?", (lead["id"],))
+            check = cur.fetchone()
             if check and check[0] == 0:
                 verified_pool.append(lead)
 
@@ -613,8 +635,9 @@ class Database:
         self.commit()
 
     def template_get(self, sequence_id, day):
-        row = self.execute("SELECT subject, html_body, source, locked FROM templates WHERE sequence_id=? AND day=?", 
-                          (sequence_id, day)).fetchone()
+        cur = self.execute("SELECT subject, html_body, source, locked FROM templates WHERE sequence_id=? AND day=?", 
+                          (sequence_id, day))
+        row = cur.fetchone()
         return {"subject": row[0], "html_body": row[1], "source": row[2], "locked": bool(row[3])} if row else None
 
     def template_lock(self, sequence_id, day):
@@ -626,7 +649,8 @@ class Database:
         self.commit()
 
     def template_is_locked(self, sequence_id, day):
-        row = self.execute("SELECT locked FROM templates WHERE sequence_id=? AND day=?", (sequence_id, day)).fetchone()
+        cur = self.execute("SELECT locked FROM templates WHERE sequence_id=? AND day=?", (sequence_id, day))
+        row = cur.fetchone()
         return bool(row[0]) if row else False
 
     # ─── SENDS / PIPELINE ───
@@ -651,13 +675,13 @@ class Database:
         """
         if sequence_id:
             sql += " WHERE r.sequence_id=?"
-            rows = self.execute(sql + " GROUP BY r.sequence_id", (sequence_id,)).fetchall()
+            cur = self.execute(sql + " GROUP BY r.sequence_id", (sequence_id,))
         else:
-            rows = self.execute(sql + " GROUP BY r.sequence_id").fetchall()
-        return [dict(r) for r in rows]
+            cur = self.execute(sql + " GROUP BY r.sequence_id")
+        return self._fetchall(cur)
 
     def get_day_wise_pipeline(self, sequence_id):
-        rows = self.execute("""
+        cur = self.execute("""
             SELECT day,
                 COUNT(DISTINCT recipient_id) as total,
                 COUNT(DISTINCT CASE WHEN status='sent' THEN recipient_id END) as sent,
@@ -667,8 +691,8 @@ class Database:
             WHERE recipient_id IN (SELECT id FROM recipients WHERE sequence_id=?)
             GROUP BY day
             ORDER BY day
-        """, (sequence_id,)).fetchall()
-        return {r[0]: {"total": r[1], "sent": r[2], "bounced": r[3], "replied": r[4]} for r in rows}
+        """, (sequence_id,))
+        return {r[0]: {"total": r[1], "sent": r[2], "bounced": r[3], "replied": r[4]} for r in cur.fetchall()}
 
     # ─── BLACKLIST ───
     def blacklist_add(self, email, reason="manual", source="user"):
@@ -687,11 +711,12 @@ class Database:
         self.commit()
 
     def blacklist_has(self, email):
-        return self.execute("SELECT 1 FROM blacklist WHERE email=?", (email.lower().strip(),)).fetchone() is not None
+        cur = self.execute("SELECT 1 FROM blacklist WHERE email=?", (email.lower().strip(),))
+        return cur.fetchone() is not None
 
     def blacklist_get_all(self):
-        rows = self.execute("SELECT * FROM blacklist ORDER BY added_at DESC").fetchall()
-        return [dict(r) for r in rows]
+        cur = self.execute("SELECT * FROM blacklist ORDER BY added_at DESC")
+        return self._fetchall(cur)
 
     # ─── META ───
     def set_meta(self, key, value):
@@ -699,17 +724,18 @@ class Database:
         self.commit()
 
     def get_meta(self, key):
-        row = self.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+        cur = self.execute("SELECT value FROM meta WHERE key=?", (key,))
+        row = cur.fetchone()
         return row[0] if row else None
 
     # ─── AUDIT LOG ───
     def log_action(self, action, details=None, user='system'):
-        self.execute("INSERT INTO audit_log (action, details, created_by) VALUES (?, ?, ?)", (action, details, user))
+        self.execute("INSERT INTO audit_log (action, details, "user") VALUES (?, ?, ?)", (action, details, user))
         self.commit()
 
     def get_audit_log(self, limit=50):
-        rows = self.execute("SELECT * FROM audit_log ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
-        return [dict(r) for r in rows]
+        cur = self.execute("SELECT * FROM audit_log ORDER BY created_at DESC LIMIT ?", (limit,))
+        return self._fetchall(cur)
 
     # ─── BATCH PIPELINE TRACKING ───
     def batch_get_pipeline(self, batch_id: int) -> dict:
@@ -723,15 +749,15 @@ class Database:
             if root:
                 root_id = root["id"]
 
-        rows = self.execute("""
+        cur = self.execute("""
             SELECT * FROM batches 
             WHERE parent_batch_id=? OR id=? 
             ORDER BY day_offset
-        """, (root_id, root_id)).fetchall()
+        """, (root_id, root_id))
+        rows = self._fetchall(cur)
 
         pipeline_batches = []
-        for r in rows:
-            b = dict(r)
+        for b in rows:
             counts = self.batch_count_by_status(b["id"])
             b["counts"] = counts
             b["total_recipients"] = sum(counts.values())
@@ -750,18 +776,18 @@ class Database:
 
     def batch_get_all_pipelines(self, sequence_id: str = None) -> list:
         if sequence_id:
-            roots = self.execute("""
+            cur = self.execute("""
                 SELECT DISTINCT parent_batch_id FROM batches 
                 WHERE sequence_id=? AND parent_batch_id IS NOT NULL
-            """, (sequence_id,)).fetchall()
+            """, (sequence_id,))
         else:
-            roots = self.execute("""
+            cur = self.execute("""
                 SELECT DISTINCT parent_batch_id FROM batches 
                 WHERE parent_batch_id IS NOT NULL
-            """).fetchall()
+            """)
 
         pipelines = []
-        for (root_id,) in roots:
+        for (root_id,) in cur.fetchall():
             if root_id:
                 pipe = self.batch_get_pipeline(root_id)
                 if pipe:
@@ -776,20 +802,20 @@ class Database:
         """, (name, sequence_id, total_leads, auto_advance))
         self.commit()
         if self.is_postgres:
-            id_row = self.execute("SELECT lastval()").fetchone()
-            return id_row[0]
+            cur.execute("SELECT lastval()")
+            return cur.fetchone()[0]
         return cur.lastrowid
 
     def campaign_get(self, campaign_id):
-        row = self.execute("SELECT * FROM outreach_campaigns WHERE id=?", (campaign_id,)).fetchone()
-        return dict(row) if row else None
+        cur = self.execute("SELECT * FROM outreach_campaigns WHERE id=?", (campaign_id,))
+        return self._fetchone(cur)
 
     def campaign_get_all(self, status=None):
         if status:
-            rows = self.execute("SELECT * FROM outreach_campaigns WHERE status=? ORDER BY created_at DESC", (status,)).fetchall()
+            cur = self.execute("SELECT * FROM outreach_campaigns WHERE status=? ORDER BY created_at DESC", (status,))
         else:
-            rows = self.execute("SELECT * FROM outreach_campaigns ORDER BY created_at DESC").fetchall()
-        return [dict(r) for r in rows]
+            cur = self.execute("SELECT * FROM outreach_campaigns ORDER BY created_at DESC")
+        return self._fetchall(cur)
 
     def campaign_update_status(self, campaign_id, status):
         self.execute("UPDATE outreach_campaigns SET status=? WHERE id=?", (status, campaign_id))
@@ -800,10 +826,10 @@ class Database:
         self.commit()
 
     def campaign_get_batches(self, campaign_id):
-        rows = self.execute("""
+        cur = self.execute("""
             SELECT * FROM batches WHERE campaign_id=? ORDER BY day_offset, created_at
-        """, (campaign_id,)).fetchall()
-        return [dict(r) for r in rows]
+        """, (campaign_id,))
+        return self._fetchall(cur)
 
     def campaign_get_pipeline(self, campaign_id):
         campaign = self.campaign_get(campaign_id)
@@ -844,13 +870,13 @@ class Database:
             return None
 
         current_day = batch.get("day_offset", 1)
-        rows = self.execute("""
+        cur = self.execute("""
             SELECT * FROM batches 
             WHERE campaign_id=? AND day_offset > ? AND status='draft'
             ORDER BY day_offset LIMIT 1
-        """, (campaign_id, current_day)).fetchall()
-
-        return dict(rows[0]) if rows else None
+        """, (campaign_id, current_day))
+        rows = self._fetchall(cur)
+        return rows[0] if rows else None
 
     # ─── DASHBOARD SUMMARY ───
     def get_dashboard_summary(self):
@@ -861,7 +887,8 @@ class Database:
             seq["recipients"] = self.recipient_count(seq_id)
             seq["pool_count"] = self.get_pool_count(seq_id)
 
-            tmpl_rows = self.execute("SELECT day, source, locked FROM templates WHERE sequence_id=?", (seq_id,)).fetchall()
+            cur = self.execute("SELECT day, source, locked FROM templates WHERE sequence_id=?", (seq_id,))
+            tmpl_rows = cur.fetchall()
             seq["templates"] = {r[0]: {"source": r[1], "locked": bool(r[2])} for r in tmpl_rows}
             seq["templates_total"] = len(tmpl_rows)
             seq["templates_locked"] = sum(1 for t in tmpl_rows if t[2])
@@ -884,12 +911,24 @@ class Database:
 
             summary["sequences"][seq_id] = seq
 
+        cur = self.execute("SELECT COUNT(*) FROM blacklist")
+        bl_count = cur.fetchone()[0]
+
+        cur = self.execute("SELECT COUNT(*) FROM replies WHERE status='pending'")
+        pending_replies = cur.fetchone()[0]
+
+        cur = self.execute("SELECT COUNT(*) FROM replies WHERE status='drafted'")
+        drafted_replies = cur.fetchone()[0]
+
+        cur = self.execute("SELECT COUNT(*) FROM batches WHERE status IN ('scheduled','running')")
+        active_batches = cur.fetchone()[0]
+
         summary["global"] = {
             "total_recipients": self.recipient_count(),
-            "blacklist_count": self.execute("SELECT COUNT(*) FROM blacklist").fetchone()[0],
-            "pending_replies": self.execute("SELECT COUNT(*) FROM replies WHERE status='pending'").fetchone()[0],
-            "drafted_replies": self.execute("SELECT COUNT(*) FROM replies WHERE status='drafted'").fetchone()[0],
-            "active_batches": self.execute("SELECT COUNT(*) FROM batches WHERE status IN ('scheduled','running')").fetchone()[0]
+            "blacklist_count": bl_count,
+            "pending_replies": pending_replies,
+            "drafted_replies": drafted_replies,
+            "active_batches": active_batches
         }
 
         return summary
@@ -907,16 +946,16 @@ class Database:
             self.commit()
 
             if batch_id:
-                rows = self.execute(
+                cur = self.execute(
                     "SELECT * FROM activity_log WHERE batch_id = ? ORDER BY created_at DESC LIMIT ?",
                     (batch_id, limit)
-                ).fetchall()
+                )
             else:
-                rows = self.execute(
+                cur = self.execute(
                     "SELECT * FROM activity_log ORDER BY created_at DESC LIMIT ?",
                     (limit,)
-                ).fetchall()
-            return [dict(r) for r in rows]
+                )
+            return self._fetchall(cur)
         except Exception as e:
             print(f"Activity log error: {e}")
             return []
