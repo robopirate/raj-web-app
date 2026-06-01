@@ -1,13 +1,13 @@
 # Raj Web App — Python Dependencies
-# Fixed for Python 3.14 compatibility
+# Fixed for Python 3.14 compatibility — psycopg2 2.9.11+ required
 
 # ─── Web Framework ───
 Flask==3.0.0
 flask-cors==4.0.0
 
 # ─── Database ───
-# psycopg2-binary 2.9.10 has pre-built wheels for Python 3.14
-psycopg2-binary==2.9.10
+# psycopg2 2.9.11 is the FIRST version with Python 3.14 support
+psycopg2==2.9.12
 
 # ─── Google APIs ───
 google-auth==2.23.4
