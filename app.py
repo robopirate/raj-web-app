@@ -1,6 +1,6 @@
 """
-app.py -- Raj Web App - Flask Backend v3.2
-Fixed: Thread-safe database connections for PostgreSQL + gunicorn
+app.py -- Raj Web App - Flask Backend v3.3
+Fixed: Engine gets its own DB connection, auto-reconnect support
 """
 
 import os
@@ -19,7 +19,7 @@ CORS(app, supports_credentials=True)
 
 API_DIR = Path(__file__).parent
 
-# ─── Globals (shared, read-only) ───
+# ─── Globals ───
 engine = None
 brain = None
 
@@ -44,21 +44,22 @@ def close_db(error):
 def init_services():
     global engine, brain
 
-    print("[INIT] Starting Raj Web App v3.2...")
+    print("[INIT] Starting Raj Web App v3.3...")
 
-    # Engine (works even without Gmail)
+    # Engine gets its own DB connection (separate from web requests)
     from engine import CampaignEngine
     from db import Database
 
-    # Create a temporary DB for engine init
-    tmp_db = Database()
+    engine_db = Database()
 
     # Gmail (optional - web OAuth)
     gmail = None
     try:
         from gmail_web import GmailWebClient
-        gmail = GmailWebClient(tmp_db)
-        if gmail.is_authenticated():
+        gmail = GmailWebClient(engine_db)
+        # Check if token exists
+        token_path = Path(__file__).parent / 'token.json'
+        if token_path.exists():
             print("[INIT] Gmail Web OAuth connected")
         else:
             print("[INIT] Gmail Web OAuth not authenticated - connect via /api/gmail/auth-url")
@@ -67,24 +68,18 @@ def init_services():
         print(f"[INIT] Gmail Web not available: {e}")
         gmail = None
 
-    engine = CampaignEngine(tmp_db, gmail)
+    engine = CampaignEngine(engine_db, gmail)
     engine.start()
     print("[INIT] Engine started")
 
     # Brain
     try:
         from raj_brain import RajBrain
-        brain = RajBrain(tmp_db, engine)
+        brain = RajBrain(engine_db, engine)
         print("[INIT] Raj brain initialized")
     except Exception as e:
         print(f"[INIT] Brain not available: {e}")
         brain = None
-
-    # Close tmp_db - each request will get its own
-    try:
-        tmp_db.conn.close()
-    except:
-        pass
 
 # ═══════════════════════════════════════════════
 # STATIC / SPA
@@ -103,7 +98,7 @@ def serve_static(path):
 # ─── Health Check (for Render) ───
 @app.route('/health')
 def health_check():
-    return jsonify({"status": "ok", "version": "3.2", "timestamp": datetime.now().isoformat()})
+    return jsonify({"status": "ok", "version": "3.3", "timestamp": datetime.now().isoformat()})
 
 # ═══════════════════════════════════════════════
 # GMAIL WEB OAUTH

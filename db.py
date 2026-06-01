@@ -1,7 +1,6 @@
 """
-db.py -- RoboPirate Campaign Database v5.4
-Dual database: SQLite (local) + PostgreSQL (Render cloud)
-Fixed: psycopg2-binary compatibility, reserved keywords, cursor handling
+db.py -- RoboPirate Campaign Database v5.5
+Fixed: Auto-reconnect when PostgreSQL connection is closed
 """
 
 import os
@@ -16,22 +15,48 @@ class Database:
     def __init__(self, db_path=None):
         self.db_url = os.environ.get('DATABASE_URL')
         self.is_postgres = bool(self.db_url)
+        self.db_path = db_path or str(DB_PATH)
+        self.conn = None
+        self._connect()
+        self._init_tables()
+        self._migrate_schema()
 
+    def _connect(self):
+        """Create a fresh database connection."""
         if self.is_postgres:
             import psycopg2
             self.conn = psycopg2.connect(self.db_url)
             print("[DB] Connected to PostgreSQL (cloud)")
         else:
-            self.db_path = db_path or str(DB_PATH)
             self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
             self.conn.row_factory = sqlite3.Row
             print("[DB] Connected to SQLite (local)")
 
-        self._init_tables()
-        self._migrate_schema()
+    def _ensure_connected(self):
+        """Reconnect if connection was closed."""
+        if self.conn is None:
+            self._connect()
+            return
+        try:
+            if self.is_postgres:
+                # Test if connection is alive
+                cur = self.conn.cursor()
+                cur.execute('SELECT 1')
+                cur.close()
+            else:
+                self.conn.execute('SELECT 1')
+        except Exception:
+            print("[DB] Connection lost, reconnecting...")
+            try:
+                self.conn.close()
+            except:
+                pass
+            self._connect()
 
     def _execute(self, sql, params=()):
-        """Execute SQL with auto-converted placeholders."""
+        """Execute SQL with auto-converted placeholders and auto-reconnect."""
+        self._ensure_connected()
+
         if self.is_postgres:
             sql = sql.replace('?', '%s')
             cur = self.conn.cursor()
@@ -43,6 +68,7 @@ class Database:
         return self._execute(sql, params)
 
     def commit(self):
+        self._ensure_connected()
         self.conn.commit()
 
     def _init_tables(self):
@@ -394,7 +420,6 @@ class Database:
         cur.close()
 
     def _migrate_schema(self):
-        """Auto-migrate database schema when code updates."""
         try:
             self.execute("SELECT parent_batch_id FROM batches LIMIT 1")
         except:
@@ -426,7 +451,6 @@ class Database:
             print("[DB] Migration complete: campaign_id added")
 
     def _fetchall(self, cursor):
-        """Fetch all rows from cursor, return as list of dicts."""
         if self.is_postgres:
             rows = cursor.fetchall()
             if not rows:
@@ -437,7 +461,6 @@ class Database:
             return [dict(r) for r in cursor.fetchall()]
 
     def _fetchone(self, cursor):
-        """Fetch one row from cursor."""
         if self.is_postgres:
             row = cursor.fetchone()
             if not row:
