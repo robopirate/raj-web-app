@@ -1,7 +1,7 @@
 """
-db.py -- RoboPirate Campaign Database v5.3
+db.py -- RoboPirate Campaign Database v5.4
 Dual database: SQLite (local) + PostgreSQL (Render cloud)
-Fixed: psycopg2 cursor support, reserved keywords, syntax errors
+Fixed: psycopg2-binary compatibility, reserved keywords, cursor handling
 """
 
 import os
@@ -214,14 +214,14 @@ class Database:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 action TEXT NOT NULL,
                 details TEXT,
-                user TEXT DEFAULT 'system',
+                created_by TEXT DEFAULT 'system',
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             );
             CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action);
         """)
 
         for seq_id, name, audience in [("school","SCHOOL","private_school"), ("csr","CSR","csr")]:
-            self.execute("INSERT OR IGNORE INTO campaigns (id, name, audience) VALUES (?, ?, ?)", 
+            self.execute("INSERT OR IGNORE INTO campaigns (id, name, audience) VALUES (?, ?, ?)",
                         (seq_id, name, audience))
         self.conn.commit()
 
@@ -375,7 +375,7 @@ class Database:
                 id SERIAL PRIMARY KEY,
                 action TEXT NOT NULL,
                 details TEXT,
-                user TEXT DEFAULT 'system',
+                created_by TEXT DEFAULT 'system',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )""",
             """CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action)""",
@@ -412,7 +412,7 @@ class Database:
             self.commit()
             print("[DB] Migration complete: batched flag added")
             self.execute("""
-                UPDATE recipients SET batched=1 
+                UPDATE recipients SET batched=1
                 WHERE id IN (SELECT DISTINCT recipient_id FROM batch_recipients)
             """)
             self.commit()
@@ -455,8 +455,8 @@ class Database:
                 INSERT INTO recipients (sequence_id, email, name, org, extra_json, import_status, batched)
                 VALUES (?, ?, ?, ?, ?, 'success', 0)
                 ON CONFLICT(sequence_id, email) DO UPDATE SET
-                    name=excluded.name, org=excluded.org, extra_json=excluded.extra_json,
-                    import_status='success', import_error=NULL, batched=0
+                name=excluded.name, org=excluded.org, extra_json=excluded.extra_json,
+                import_status='success', import_error=NULL, batched=0
             """, (sequence_id, email.lower().strip(), name, org, extra_json))
             self.commit()
             return True, None
@@ -491,7 +491,7 @@ class Database:
 
     def get_pool_count(self, sequence_id):
         cur = self.execute(
-            "SELECT COUNT(*) FROM recipients WHERE sequence_id=? AND batched=0", 
+            "SELECT COUNT(*) FROM recipients WHERE sequence_id=? AND batched=0",
             (sequence_id,)
         )
         row = cur.fetchone()
@@ -515,7 +515,7 @@ class Database:
         return '%s' if self.is_postgres else '?'
 
     # ─── BATCHES ───
-    def batch_create(self, name, sequence_id, scheduled_at=None, timezone='Asia/Kolkata', 
+    def batch_create(self, name, sequence_id, scheduled_at=None, timezone='Asia/Kolkata',
                      send_rate=0, stagger_minutes=0, day_offset=1, parent_batch_id=None, campaign_id=None):
         cur = self.execute("""
             INSERT INTO batches (name, sequence_id, status, scheduled_at, timezone, send_rate, stagger_minutes, day_offset, parent_batch_id, campaign_id)
@@ -565,9 +565,9 @@ class Database:
 
     def batch_get_recipients(self, batch_id):
         cur = self.execute("""
-            SELECT r.*, br.status as batch_status, br.sent_at 
-            FROM recipients r 
-            JOIN batch_recipients br ON r.id = br.recipient_id 
+            SELECT r.*, br.status as batch_status, br.sent_at
+            FROM recipients r
+            JOIN batch_recipients br ON r.id = br.recipient_id
             WHERE br.batch_id=?
         """, (batch_id,))
         return self._fetchall(cur)
@@ -592,7 +592,7 @@ class Database:
         return {r[0]: r[1] for r in cur.fetchall()}
 
     # ─── CREATE BATCH FROM POOL ───
-    def batch_from_pool(self, name, sequence_id, batch_size, day_offset=1, 
+    def batch_from_pool(self, name, sequence_id, batch_size, day_offset=1,
                         scheduled_at=None, timezone='Asia/Kolkata', send_rate=0, stagger_minutes=0, campaign_id=None):
         pool = self.get_pool(sequence_id, limit=batch_size)
         if not pool:
@@ -628,13 +628,13 @@ class Database:
             INSERT INTO templates (sequence_id, day, subject, html_body, source)
             VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(sequence_id, day) DO UPDATE SET
-                subject=excluded.subject, html_body=excluded.html_body, 
-                source=excluded.source, cached_at=CURRENT_TIMESTAMP
+            subject=excluded.subject, html_body=excluded.html_body,
+            source=excluded.source, cached_at=CURRENT_TIMESTAMP
         """, (sequence_id, day, subject, html_body, source))
         self.commit()
 
     def template_get(self, sequence_id, day):
-        cur = self.execute("SELECT subject, html_body, source, locked FROM templates WHERE sequence_id=? AND day=?", 
+        cur = self.execute("SELECT subject, html_body, source, locked FROM templates WHERE sequence_id=? AND day=?",
                           (sequence_id, day))
         row = cur.fetchone()
         return {"subject": row[0], "html_body": row[1], "source": row[2], "locked": bool(row[3])} if row else None
@@ -662,13 +662,13 @@ class Database:
 
     def get_pipeline(self, sequence_id=None):
         sql = """
-            SELECT 
-                r.sequence_id,
-                COUNT(DISTINCT r.id) as total_recipients,
-                COUNT(DISTINCT CASE WHEN s.status='drafted' THEN s.recipient_id END) as drafted,
-                COUNT(DISTINCT CASE WHEN s.status='sent' THEN s.recipient_id END) as sent,
-                COUNT(DISTINCT CASE WHEN s.status='bounced' THEN s.recipient_id END) as bounced,
-                COUNT(DISTINCT CASE WHEN s.status='replied' THEN s.recipient_id END) as replied
+            SELECT
+            r.sequence_id,
+            COUNT(DISTINCT r.id) as total_recipients,
+            COUNT(DISTINCT CASE WHEN s.status='drafted' THEN s.recipient_id END) as drafted,
+            COUNT(DISTINCT CASE WHEN s.status='sent' THEN s.recipient_id END) as sent,
+            COUNT(DISTINCT CASE WHEN s.status='bounced' THEN s.recipient_id END) as bounced,
+            COUNT(DISTINCT CASE WHEN s.status='replied' THEN s.recipient_id END) as replied
             FROM recipients r
             LEFT JOIN sends s ON r.id = s.recipient_id
         """
@@ -682,10 +682,10 @@ class Database:
     def get_day_wise_pipeline(self, sequence_id):
         cur = self.execute("""
             SELECT day,
-                COUNT(DISTINCT recipient_id) as total,
-                COUNT(DISTINCT CASE WHEN status='sent' THEN recipient_id END) as sent,
-                COUNT(DISTINCT CASE WHEN status='bounced' THEN recipient_id END) as bounced,
-                COUNT(DISTINCT CASE WHEN status='replied' THEN recipient_id END) as replied
+            COUNT(DISTINCT recipient_id) as total,
+            COUNT(DISTINCT CASE WHEN status='sent' THEN recipient_id END) as sent,
+            COUNT(DISTINCT CASE WHEN status='bounced' THEN recipient_id END) as bounced,
+            COUNT(DISTINCT CASE WHEN status='replied' THEN recipient_id END) as replied
             FROM sends
             WHERE recipient_id IN (SELECT id FROM recipients WHERE sequence_id=?)
             GROUP BY day
@@ -696,8 +696,8 @@ class Database:
     # ─── BLACKLIST ───
     def blacklist_add(self, email, reason="manual", source="user"):
         self.execute("""
-            INSERT INTO blacklist (email, reason, source) 
-            VALUES (?, ?, ?) 
+            INSERT INTO blacklist (email, reason, source)
+            VALUES (?, ?, ?)
             ON CONFLICT(email) DO UPDATE SET reason=excluded.reason, source=excluded.source
         """, (email.lower().strip(), reason, source))
         self.commit()
@@ -728,8 +728,8 @@ class Database:
         return row[0] if row else None
 
     # ─── AUDIT LOG ───
-    def log_action(self, action, details=None, user='system'):
-        self.execute("INSERT INTO audit_log (action, details, user) VALUES (?, ?, ?)", (action, details, user))
+    def log_action(self, action, details=None, created_by='system'):
+        self.execute("INSERT INTO audit_log (action, details, created_by) VALUES (?, ?, ?)", (action, details, created_by))
         self.commit()
 
     def get_audit_log(self, limit=50):
@@ -749,8 +749,8 @@ class Database:
                 root_id = root["id"]
 
         cur = self.execute("""
-            SELECT * FROM batches 
-            WHERE parent_batch_id=? OR id=? 
+            SELECT * FROM batches
+            WHERE parent_batch_id=? OR id=?
             ORDER BY day_offset
         """, (root_id, root_id))
         rows = self._fetchall(cur)
@@ -776,12 +776,12 @@ class Database:
     def batch_get_all_pipelines(self, sequence_id: str = None) -> list:
         if sequence_id:
             cur = self.execute("""
-                SELECT DISTINCT parent_batch_id FROM batches 
+                SELECT DISTINCT parent_batch_id FROM batches
                 WHERE sequence_id=? AND parent_batch_id IS NOT NULL
             """, (sequence_id,))
         else:
             cur = self.execute("""
-                SELECT DISTINCT parent_batch_id FROM batches 
+                SELECT DISTINCT parent_batch_id FROM batches
                 WHERE parent_batch_id IS NOT NULL
             """)
 
@@ -870,7 +870,7 @@ class Database:
 
         current_day = batch.get("day_offset", 1)
         cur = self.execute("""
-            SELECT * FROM batches 
+            SELECT * FROM batches
             WHERE campaign_id=? AND day_offset > ? AND status='draft'
             ORDER BY day_offset LIMIT 1
         """, (campaign_id, current_day))
