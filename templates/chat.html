@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Raj Chat - RoboPirate</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/raj.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        .chat-container {
+            max-width: 800px;
+            margin: 0 auto;
+            height: calc(100vh - 48px);
+            display: flex;
+            flex-direction: column;
+        }
+        .chat-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .chat-header .avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--accent-teal);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+        .chat-header h2 {
+            font-size: 18px;
+        }
+        .chat-header .status {
+            font-size: 12px;
+            color: var(--success);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .chat-header .status::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+            display: inline-block;
+        }
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .message {
+            max-width: 80%;
+            padding: 14px 18px;
+            border-radius: 14px;
+            font-size: 14px;
+            line-height: 1.5;
+            animation: fadeIn 0.3s ease;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .message.user {
+            align-self: flex-end;
+            background: var(--accent-cyan);
+            color: var(--bg-primary);
+            border-bottom-right-radius: 4px;
+        }
+        .message.raj {
+            align-self: flex-start;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-bottom-left-radius: 4px;
+        }
+        .message-time {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 6px;
+        }
+        .chat-input-area {
+            padding: 16px 24px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            gap: 12px;
+        }
+        .chat-input {
+            flex: 1;
+            padding: 12px 16px;
+            border-radius: 24px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-card);
+            color: var(--text-primary);
+            font-size: 14px;
+            font-family: inherit;
+            outline: none;
+        }
+        .chat-input:focus {
+            border-color: var(--accent-cyan);
+        }
+        .chat-send {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            border: none;
+            background: var(--accent-teal);
+            color: white;
+            font-size: 18px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .chat-send:hover {
+            background: #0ab89a;
+            transform: scale(1.05);
+        }
+        .typing-indicator {
+            display: none;
+            align-self: flex-start;
+            padding: 12px 18px;
+            background: var(--bg-card);
+            border-radius: 14px;
+            border-bottom-left-radius: 4px;
+        }
+        .typing-indicator.active {
+            display: flex;
+            gap: 4px;
+        }
+        .typing-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-muted);
+            animation: typing 1.4s infinite;
+        }
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-6px); }
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="logo">🤖</div>
+                <div class="brand-text">
+                    <h1>RAJ</h1>
+                    <span>by RoboPirate</span>
+                </div>
+            </div>
+            <nav class="nav">
+                <a href="/" class="nav-item">
+                    <span class="icon">📊</span>
+                    <span>Dashboard</span>
+                </a>
+                <a href="/chat" class="nav-item active">
+                    <span class="icon">💬</span>
+                    <span>Chat</span>
+                </a>
+                <a href="/" class="nav-item">
+                    <span class="icon">📥</span>
+                    <span>Import</span>
+                </a>
+                <a href="/" class="nav-item">
+                    <span class="icon">📄</span>
+                    <span>Templates</span>
+                </a>
+            </nav>
+        </aside>
+
+        <main class="main" style="padding: 0;">
+            <div class="chat-container">
+                <div class="chat-header">
+                    <div class="avatar">🤖</div>
+                    <div>
+                        <h2>Raj AI Assistant</h2>
+                        <div class="status">Online</div>
+                    </div>
+                </div>
+
+                <div class="chat-messages" id="chat-messages">
+                    <div class="message raj">
+                        Hello! I'm Raj, your email automation assistant. How can I help you today?
+                        <div class="message-time">Just now</div>
+                    </div>
+                </div>
+
+                <div class="typing-indicator" id="typing-indicator">
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                </div>
+
+                <div class="chat-input-area">
+                    <input type="text" class="chat-input" id="chat-input" 
+                           placeholder="Ask Raj anything... (e.g., 'start batch', 'scan bounces')"
+                           onkeypress="if(event.key==='Enter') sendMessage()">
+                    <button class="chat-send" onclick="sendMessage()">➤</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const API_BASE = '';
+
+        function sendMessage() {
+            const input = document.getElementById('chat-input');
+            const message = input.value.trim();
+            if (!message) return;
+
+            // Add user message
+            addMessage(message, 'user');
+            input.value = '';
+
+            // Show typing
+            document.getElementById('typing-indicator').classList.add('active');
+
+            // Send to API
+            fetch(`${API_BASE}/api/chat`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({message: message})
+            })
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('typing-indicator').classList.remove('active');
+                addMessage(data.response, 'raj');
+            })
+            .catch(e => {
+                document.getElementById('typing-indicator').classList.remove('active');
+                addMessage('Sorry, I had trouble processing that. Please try again.', 'raj');
+            });
+        }
+
+        function addMessage(text, sender) {
+            const container = document.getElementById('chat-messages');
+            const time = new Date().toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'});
+            const div = document.createElement('div');
+            div.className = `message ${sender}`;
+            div.innerHTML = `${text}<div class="message-time">${time}</div>`;
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+    </script>
+</body>
+</html>
