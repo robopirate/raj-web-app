@@ -1,8 +1,10 @@
 """
-db.py -- RoboPirate Campaign Database v5.0 (Pool-Based Architecture)
-All leads go to DB first. Batches are created FROM the pool.
+db.py -- RoboPirate Campaign Database v5.1
+Dual database: SQLite (local) + PostgreSQL (Render cloud)
+Auto-detects via DATABASE_URL environment variable.
 """
 
+import os
 import sqlite3
 import json
 from pathlib import Path
@@ -12,17 +14,49 @@ DB_PATH = Path(__file__).parent / "campaign_data.db"
 
 class Database:
     def __init__(self, db_path=None):
-        self.db_path = db_path or str(DB_PATH)
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
+        self.db_url = os.environ.get('DATABASE_URL')
+        self.is_postgres = bool(self.db_url)
+
+        if self.is_postgres:
+            import psycopg2
+            self.conn = psycopg2.connect(self.db_url)
+            print("[DB] Connected to PostgreSQL (cloud)")
+        else:
+            self.db_path = db_path or str(DB_PATH)
+            self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            self.conn.row_factory = sqlite3.Row
+            print("[DB] Connected to SQLite (local)")
+
         self._init_tables()
         self._migrate_schema()
 
+    def _placeholder(self):
+        """Return placeholder character for current DB."""
+        return '%s' if self.is_postgres else '?'
+
+    def _execute(self, sql, params=()):
+        """Execute SQL with auto-converted placeholders."""
+        if self.is_postgres:
+            # Convert ? to %s for PostgreSQL
+            sql = sql.replace('?', '%s')
+        return self.conn.execute(sql, params)
+
+    def execute(self, sql, params=()):
+        return self._execute(sql, params)
+
+    def commit(self):
+        self.conn.commit()
+
     def _init_tables(self):
+        if self.is_postgres:
+            self._init_postgres()
+        else:
+            self._init_sqlite()
+
+    def _init_sqlite(self):
         self.conn.executescript("""
             PRAGMA foreign_keys = ON;
 
-            -- Sequences
             CREATE TABLE IF NOT EXISTS campaigns (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -30,7 +64,6 @@ class Database:
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             );
 
-            -- Recipients (leads) -- POOL
             CREATE TABLE IF NOT EXISTS recipients (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 sequence_id TEXT,
@@ -41,11 +74,12 @@ class Database:
                 import_status TEXT DEFAULT 'pending',
                 import_error TEXT,
                 imported_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                batched INTEGER DEFAULT 0,
                 UNIQUE(sequence_id, email)
             );
             CREATE INDEX IF NOT EXISTS idx_recipients_sequence ON recipients(sequence_id);
+            CREATE INDEX IF NOT EXISTS idx_recipients_batched ON recipients(batched);
 
-            -- Batches
             CREATE TABLE IF NOT EXISTS batches (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -57,12 +91,12 @@ class Database:
                 stagger_minutes INTEGER DEFAULT 0,
                 day_offset INTEGER DEFAULT 1,
                 parent_batch_id INTEGER,
+                campaign_id INTEGER,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 started_at TEXT,
                 completed_at TEXT
             );
 
-            -- Batch Recipients
             CREATE TABLE IF NOT EXISTS batch_recipients (
                 batch_id INTEGER,
                 recipient_id INTEGER,
@@ -71,12 +105,9 @@ class Database:
                 opened_at TEXT,
                 replied_at TEXT,
                 bounced_at TEXT,
-                PRIMARY KEY (batch_id, recipient_id),
-                FOREIGN KEY (batch_id) REFERENCES batches(id) ON DELETE CASCADE,
-                FOREIGN KEY (recipient_id) REFERENCES recipients(id) ON DELETE CASCADE
+                PRIMARY KEY (batch_id, recipient_id)
             );
 
-            -- Templates
             CREATE TABLE IF NOT EXISTS templates (
                 sequence_id TEXT,
                 day INTEGER,
@@ -88,7 +119,6 @@ class Database:
                 PRIMARY KEY (sequence_id, day)
             );
 
-            -- Sends (pipeline tracking)
             CREATE TABLE IF NOT EXISTS sends (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 recipient_id INTEGER,
@@ -100,15 +130,12 @@ class Database:
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 sent_at TEXT,
                 opened_at TEXT,
-                clicked_at TEXT,
-                FOREIGN KEY (recipient_id) REFERENCES recipients(id),
-                FOREIGN KEY (batch_id) REFERENCES batches(id)
+                clicked_at TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_sends_recipient ON sends(recipient_id);
             CREATE INDEX IF NOT EXISTS idx_sends_batch ON sends(batch_id);
             CREATE INDEX IF NOT EXISTS idx_sends_status ON sends(status);
 
-            -- Blacklist
             CREATE TABLE IF NOT EXISTS blacklist (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 email TEXT NOT NULL UNIQUE,
@@ -119,7 +146,6 @@ class Database:
             );
             CREATE INDEX IF NOT EXISTS idx_blacklist_email ON blacklist(email);
 
-            -- Replies
             CREATE TABLE IF NOT EXISTS replies (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 send_id INTEGER,
@@ -137,7 +163,6 @@ class Database:
             );
             CREATE INDEX IF NOT EXISTS idx_replies_status ON replies(status);
 
-            -- Calendar Events
             CREATE TABLE IF NOT EXISTS calendar_events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 reply_id INTEGER,
@@ -145,11 +170,9 @@ class Database:
                 calendar_link TEXT,
                 scheduled_at TEXT,
                 status TEXT DEFAULT 'draft',
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (reply_id) REFERENCES replies(id)
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
             );
 
-            -- Drive Files
             CREATE TABLE IF NOT EXISTS drive_files (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 template_id TEXT,
@@ -160,7 +183,6 @@ class Database:
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             );
 
-            -- Pending Resumes
             CREATE TABLE IF NOT EXISTS pending_resumes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 sequence_id TEXT NOT NULL,
@@ -170,17 +192,14 @@ class Database:
                 status TEXT DEFAULT 'pending',
                 error TEXT,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                resumed_at TEXT,
-                FOREIGN KEY (recipient_id) REFERENCES recipients(id)
+                resumed_at TEXT
             );
 
-            -- Meta / Config
             CREATE TABLE IF NOT EXISTS meta (
                 key TEXT PRIMARY KEY,
                 value TEXT
             );
 
-            -- Outreach Campaigns
             CREATE TABLE IF NOT EXISTS outreach_campaigns (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -193,7 +212,6 @@ class Database:
                 completed_at TEXT
             );
 
-            -- Audit Log
             CREATE TABLE IF NOT EXISTS audit_log (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 action TEXT NOT NULL,
@@ -209,74 +227,213 @@ class Database:
                         (seq_id, name, audience))
         self.conn.commit()
 
+    def _init_postgres(self):
+        cur = self.conn.cursor()
+
+        # PostgreSQL schema (uses SERIAL instead of AUTOINCREMENT)
+        tables = [
+            """CREATE TABLE IF NOT EXISTS campaigns (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                audience TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""",
+            """CREATE TABLE IF NOT EXISTS recipients (
+                id SERIAL PRIMARY KEY,
+                sequence_id TEXT,
+                email TEXT NOT NULL,
+                name TEXT,
+                org TEXT,
+                extra_json TEXT,
+                import_status TEXT DEFAULT 'pending',
+                import_error TEXT,
+                imported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                batched INTEGER DEFAULT 0,
+                UNIQUE(sequence_id, email)
+            )""",
+            """CREATE INDEX IF NOT EXISTS idx_recipients_sequence ON recipients(sequence_id)""",
+            """CREATE INDEX IF NOT EXISTS idx_recipients_batched ON recipients(batched)""",
+            """CREATE TABLE IF NOT EXISTS batches (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                sequence_id TEXT NOT NULL,
+                status TEXT DEFAULT 'draft',
+                scheduled_at TIMESTAMP,
+                timezone TEXT DEFAULT 'Asia/Kolkata',
+                send_rate INTEGER DEFAULT 0,
+                stagger_minutes INTEGER DEFAULT 0,
+                day_offset INTEGER DEFAULT 1,
+                parent_batch_id INTEGER,
+                campaign_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                started_at TIMESTAMP,
+                completed_at TIMESTAMP
+            )""",
+            """CREATE TABLE IF NOT EXISTS batch_recipients (
+                batch_id INTEGER,
+                recipient_id INTEGER,
+                status TEXT DEFAULT 'pending',
+                sent_at TIMESTAMP,
+                opened_at TIMESTAMP,
+                replied_at TIMESTAMP,
+                bounced_at TIMESTAMP,
+                PRIMARY KEY (batch_id, recipient_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS templates (
+                sequence_id TEXT,
+                day INTEGER,
+                subject TEXT,
+                html_body TEXT,
+                source TEXT DEFAULT 'unknown',
+                locked INTEGER DEFAULT 0,
+                cached_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (sequence_id, day)
+            )""",
+            """CREATE TABLE IF NOT EXISTS sends (
+                id SERIAL PRIMARY KEY,
+                recipient_id INTEGER,
+                batch_id INTEGER,
+                day INTEGER,
+                subject TEXT,
+                draft_id TEXT,
+                status TEXT DEFAULT 'drafted',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                sent_at TIMESTAMP,
+                opened_at TIMESTAMP,
+                clicked_at TIMESTAMP
+            )""",
+            """CREATE INDEX IF NOT EXISTS idx_sends_recipient ON sends(recipient_id)""",
+            """CREATE INDEX IF NOT EXISTS idx_sends_batch ON sends(batch_id)""",
+            """CREATE INDEX IF NOT EXISTS idx_sends_status ON sends(status)""",
+            """CREATE TABLE IF NOT EXISTS blacklist (
+                id SERIAL PRIMARY KEY,
+                email TEXT NOT NULL UNIQUE,
+                reason TEXT,
+                source TEXT DEFAULT 'manual',
+                added_by TEXT DEFAULT 'user',
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""",
+            """CREATE INDEX IF NOT EXISTS idx_blacklist_email ON blacklist(email)""",
+            """CREATE TABLE IF NOT EXISTS replies (
+                id SERIAL PRIMARY KEY,
+                send_id INTEGER,
+                thread_id TEXT NOT NULL,
+                message_id TEXT NOT NULL UNIQUE,
+                from_addr TEXT,
+                subject TEXT,
+                body TEXT,
+                sentiment TEXT,
+                summary TEXT,
+                draft_reply_id TEXT,
+                status TEXT DEFAULT 'pending',
+                received_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""",
+            """CREATE INDEX IF NOT EXISTS idx_replies_status ON replies(status)""",
+            """CREATE TABLE IF NOT EXISTS calendar_events (
+                id SERIAL PRIMARY KEY,
+                reply_id INTEGER,
+                event_id TEXT,
+                calendar_link TEXT,
+                scheduled_at TIMESTAMP,
+                status TEXT DEFAULT 'draft',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""",
+            """CREATE TABLE IF NOT EXISTS drive_files (
+                id SERIAL PRIMARY KEY,
+                template_id TEXT,
+                file_id TEXT,
+                file_name TEXT,
+                file_url TEXT,
+                validated_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""",
+            """CREATE TABLE IF NOT EXISTS pending_resumes (
+                id SERIAL PRIMARY KEY,
+                sequence_id TEXT NOT NULL,
+                day INTEGER NOT NULL,
+                recipient_id INTEGER NOT NULL,
+                subject TEXT,
+                status TEXT DEFAULT 'pending',
+                error TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                resumed_at TIMESTAMP
+            )""",
+            """CREATE TABLE IF NOT EXISTS meta (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )""",
+            """CREATE TABLE IF NOT EXISTS outreach_campaigns (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                sequence_id TEXT NOT NULL,
+                status TEXT DEFAULT 'draft',
+                total_leads INTEGER DEFAULT 0,
+                auto_advance INTEGER DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                started_at TIMESTAMP,
+                completed_at TIMESTAMP
+            )""",
+            """CREATE TABLE IF NOT EXISTS audit_log (
+                id SERIAL PRIMARY KEY,
+                action TEXT NOT NULL,
+                details TEXT,
+                user TEXT DEFAULT 'system',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""",
+            """CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action)""",
+        ]
+
+        for sql in tables:
+            cur.execute(sql)
+
+        # Insert default campaigns
+        for seq_id, name, audience in [("school","SCHOOL","private_school"), ("csr","CSR","csr")]:
+            cur.execute("""
+                INSERT INTO campaigns (id, name, audience) VALUES (%s, %s, %s)
+                ON CONFLICT (id) DO NOTHING
+            """, (seq_id, name, audience))
+
+        self.conn.commit()
+        cur.close()
+
     def _migrate_schema(self):
         """Auto-migrate database schema when code updates."""
         # Add parent_batch_id to batches if missing
         try:
-            self.conn.execute("SELECT parent_batch_id FROM batches LIMIT 1")
-        except sqlite3.OperationalError:
+            self.execute("SELECT parent_batch_id FROM batches LIMIT 1")
+        except:
             print("[DB] Migrating: Adding parent_batch_id to batches...")
-            self.conn.execute("ALTER TABLE batches ADD COLUMN parent_batch_id INTEGER")
-            self.conn.commit()
+            self.execute("ALTER TABLE batches ADD COLUMN parent_batch_id INTEGER")
+            self.commit()
             print("[DB] Migration complete: parent_batch_id added")
 
         # Add batched flag to recipients if missing
         try:
-            self.conn.execute("SELECT batched FROM recipients LIMIT 1")
-        except sqlite3.OperationalError:
+            self.execute("SELECT batched FROM recipients LIMIT 1")
+        except:
             print("[DB] Migrating: Adding batched flag to recipients...")
-            self.conn.execute("ALTER TABLE recipients ADD COLUMN batched INTEGER DEFAULT 0")
-            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_recipients_batched ON recipients(batched)")
-            self.conn.commit()
+            self.execute("ALTER TABLE recipients ADD COLUMN batched INTEGER DEFAULT 0")
+            self.execute("CREATE INDEX IF NOT EXISTS idx_recipients_batched ON recipients(batched)")
+            self.commit()
             print("[DB] Migration complete: batched flag added")
-
-            # Fix: Mark leads already in batches as batched=1
-            print("[DB] Fixing existing batch recipients...")
-            self.conn.execute("""
+            # Fix existing batch recipients
+            self.execute("""
                 UPDATE recipients SET batched=1 
                 WHERE id IN (SELECT DISTINCT recipient_id FROM batch_recipients)
             """)
-            self.conn.commit()
-            fixed = self.conn.execute("SELECT changes()").fetchone()[0]
-            print(f"[DB] Marked {fixed} existing batch recipients as batched=1")
+            self.commit()
 
         # Add campaign_id to batches if missing
         try:
-            self.conn.execute("SELECT campaign_id FROM batches LIMIT 1")
-        except sqlite3.OperationalError:
+            self.execute("SELECT campaign_id FROM batches LIMIT 1")
+        except:
             print("[DB] Migrating: Adding campaign_id to batches...")
-            self.conn.execute("ALTER TABLE batches ADD COLUMN campaign_id INTEGER")
-            self.conn.commit()
+            self.execute("ALTER TABLE batches ADD COLUMN campaign_id INTEGER")
+            self.commit()
             print("[DB] Migration complete: campaign_id added")
 
-        # Create outreach_campaigns table if missing
-        try:
-            self.conn.execute("SELECT 1 FROM outreach_campaigns LIMIT 1")
-        except sqlite3.OperationalError:
-            print("[DB] Migrating: Creating outreach_campaigns table...")
-            self.conn.execute("""
-                CREATE TABLE IF NOT EXISTS outreach_campaigns (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL,
-                    sequence_id TEXT NOT NULL,
-                    status TEXT DEFAULT 'draft',
-                    total_leads INTEGER DEFAULT 0,
-                    auto_advance INTEGER DEFAULT 1,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    started_at TEXT,
-                    completed_at TEXT
-                )
-            """)
-            self.conn.commit()
-            print("[DB] Migration complete: outreach_campaigns table created")
-
-    def execute(self, sql, params=()):
-        return self.conn.execute(sql, params)
-
-    def commit(self):
-        self.conn.commit()
-
-    # -- RECIPIENTS / POOL --
+    # ─── RECIPIENTS / POOL ───
     def recipient_add(self, sequence_id, email, name, org, extra_json=None):
         try:
             self.execute("""
@@ -306,14 +463,9 @@ class Database:
         self.execute("DELETE FROM recipients WHERE id=?", (recipient_id,))
         self.commit()
 
-    # -- POOL METHODS (NEW) --
+    # ─── POOL METHODS ───
     def get_pool(self, sequence_id, limit=None):
-        """Get unbatched leads from the pool."""
-        sql = """
-            SELECT * FROM recipients 
-            WHERE sequence_id=? AND batched=0 
-            ORDER BY id
-        """
+        sql = "SELECT * FROM recipients WHERE sequence_id=? AND batched=0 ORDER BY id"
         params = [sequence_id]
         if limit:
             sql += " LIMIT ?"
@@ -322,7 +474,6 @@ class Database:
         return [dict(r) for r in rows]
 
     def get_pool_count(self, sequence_id):
-        """Count unbatched leads in pool."""
         row = self.execute(
             "SELECT COUNT(*) FROM recipients WHERE sequence_id=? AND batched=0", 
             (sequence_id,)
@@ -330,22 +481,20 @@ class Database:
         return row[0] if row else 0
 
     def mark_batched(self, recipient_ids):
-        """Mark leads as batched (moved from pool to a batch)."""
         if not recipient_ids:
             return
-        placeholders = ','.join('?' * len(recipient_ids))
+        placeholders = ','.join(self._placeholder() for _ in recipient_ids)
         self.execute(f"UPDATE recipients SET batched=1 WHERE id IN ({placeholders})", recipient_ids)
         self.commit()
 
     def unmark_batched(self, recipient_ids):
-        """Return leads to pool (e.g., batch deleted)."""
         if not recipient_ids:
             return
-        placeholders = ','.join('?' * len(recipient_ids))
+        placeholders = ','.join(self._placeholder() for _ in recipient_ids)
         self.execute(f"UPDATE recipients SET batched=0 WHERE id IN ({placeholders})", recipient_ids)
         self.commit()
 
-    # -- BATCHES --
+    # ─── BATCHES ───
     def batch_create(self, name, sequence_id, scheduled_at=None, timezone='Asia/Kolkata', 
                      send_rate=0, stagger_minutes=0, day_offset=1, parent_batch_id=None, campaign_id=None):
         cur = self.execute("""
@@ -353,11 +502,15 @@ class Database:
             VALUES (?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)
         """, (name, sequence_id, scheduled_at, timezone, send_rate, stagger_minutes, day_offset, parent_batch_id, campaign_id))
         self.commit()
+        if self.is_postgres:
+            # Get last inserted ID
+            id_row = self.execute("SELECT lastval()").fetchone()
+            return id_row[0]
         return cur.lastrowid
 
     def batch_add_recipient(self, batch_id, recipient_id):
         try:
-            self.execute("INSERT OR IGNORE INTO batch_recipients (batch_id, recipient_id) VALUES (?, ?)",
+            self.execute("INSERT INTO batch_recipients (batch_id, recipient_id) VALUES (?, ?)",
                         (batch_id, recipient_id))
             self.commit()
             return True
@@ -376,12 +529,10 @@ class Database:
         return [dict(r) for r in rows]
 
     def get_running_batches(self):
-        """Get all batches currently in 'running' status. For resume-on-boot."""
         rows = self.execute("SELECT * FROM batches WHERE status='running' ORDER BY created_at").fetchall()
         return [dict(r) for r in rows]
 
     def get_scheduled_batches(self):
-        """Get all batches in 'scheduled' status. For auto-start check."""
         rows = self.execute("SELECT * FROM batches WHERE status='scheduled' ORDER BY scheduled_at").fetchall()
         return [dict(r) for r in rows]
 
@@ -403,11 +554,10 @@ class Database:
         return [dict(r) for r in rows]
 
     def batch_delete(self, batch_id):
-        # Return leads to pool before deleting
         recipient_ids = [r["id"] for r in self.batch_get_recipients(batch_id)]
         self.unmark_batched(recipient_ids)
-        # Delete sends first (FK constraint)
         self.execute("DELETE FROM sends WHERE batch_id=?", (batch_id,))
+        self.execute("DELETE FROM batch_recipients WHERE batch_id=?", (batch_id,))
         self.execute("DELETE FROM batches WHERE id=?", (batch_id,))
         self.commit()
 
@@ -421,36 +571,26 @@ class Database:
         """, (batch_id,)).fetchall()
         return {r[0]: r[1] for r in rows}
 
-    # -- CREATE BATCH FROM POOL (NEW) --
+    # ─── CREATE BATCH FROM POOL ───
     def batch_from_pool(self, name, sequence_id, batch_size, day_offset=1, 
                         scheduled_at=None, timezone='Asia/Kolkata', send_rate=0, stagger_minutes=0, campaign_id=None):
-        """Create a batch from unbatched leads in the pool.
-        SAFETY: Only picks leads with batched=0. Double-checks before marking."""
         pool = self.get_pool(sequence_id, limit=batch_size)
         if not pool:
             return None, "No unbatched leads in pool for this sequence"
 
-        # EXTRA SAFETY: Re-verify all leads are still unbatched (race condition protection)
         verified_pool = []
         for lead in pool:
             check = self.execute("SELECT batched FROM recipients WHERE id=?", (lead["id"],)).fetchone()
             if check and check[0] == 0:
                 verified_pool.append(lead)
-            else:
-                print(f"[DB-SAFETY] Skipping lead {lead['id']} — already batched (race condition)")
 
         if not verified_pool:
-            return None, "All available leads were taken by another batch (race condition). Try again."
+            return None, "All available leads were taken by another batch. Try again."
 
         batch_id = self.batch_create(
-            name=name,
-            sequence_id=sequence_id,
-            scheduled_at=scheduled_at,
-            timezone=timezone,
-            send_rate=send_rate,
-            stagger_minutes=stagger_minutes,
-            day_offset=day_offset,
-            campaign_id=campaign_id
+            name=name, sequence_id=sequence_id, scheduled_at=scheduled_at,
+            timezone=timezone, send_rate=send_rate, stagger_minutes=stagger_minutes,
+            day_offset=day_offset, campaign_id=campaign_id
         )
 
         recipient_ids = []
@@ -461,7 +601,7 @@ class Database:
         self.mark_batched(recipient_ids)
         return batch_id, None
 
-    # -- TEMPLATES --
+    # ─── TEMPLATES ───
     def template_put(self, sequence_id, day, subject, html_body, source="synced"):
         self.execute("""
             INSERT INTO templates (sequence_id, day, subject, html_body, source)
@@ -489,7 +629,7 @@ class Database:
         row = self.execute("SELECT locked FROM templates WHERE sequence_id=? AND day=?", (sequence_id, day)).fetchone()
         return bool(row[0]) if row else False
 
-    # -- SENDS / PIPELINE --
+    # ─── SENDS / PIPELINE ───
     def campaign_queue_send(self, recipient_id, day, subject, draft_id, status="drafted", batch_id=None):
         self.execute("""
             INSERT INTO sends (recipient_id, day, subject, draft_id, status, batch_id)
@@ -530,7 +670,7 @@ class Database:
         """, (sequence_id,)).fetchall()
         return {r[0]: {"total": r[1], "sent": r[2], "bounced": r[3], "replied": r[4]} for r in rows}
 
-    # -- BLACKLIST --
+    # ─── BLACKLIST ───
     def blacklist_add(self, email, reason="manual", source="user"):
         self.execute("""
             INSERT INTO blacklist (email, reason, source) 
@@ -553,7 +693,7 @@ class Database:
         rows = self.execute("SELECT * FROM blacklist ORDER BY added_at DESC").fetchall()
         return [dict(r) for r in rows]
 
-    # -- META --
+    # ─── META ───
     def set_meta(self, key, value):
         self.execute("INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
         self.commit()
@@ -562,7 +702,7 @@ class Database:
         row = self.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
         return row[0] if row else None
 
-    # -- AUDIT LOG --
+    # ─── AUDIT LOG ───
     def log_action(self, action, details=None, user='system'):
         self.execute("INSERT INTO audit_log (action, details, user) VALUES (?, ?, ?)", (action, details, user))
         self.commit()
@@ -571,7 +711,7 @@ class Database:
         rows = self.execute("SELECT * FROM audit_log ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
         return [dict(r) for r in rows]
 
-    # -- BATCH PIPELINE TRACKING --
+    # ─── BATCH PIPELINE TRACKING ───
     def batch_get_pipeline(self, batch_id: int) -> dict:
         batch = self.batch_get(batch_id)
         if not batch:
@@ -626,18 +766,18 @@ class Database:
                 pipe = self.batch_get_pipeline(root_id)
                 if pipe:
                     pipelines.append(pipe)
-
         return pipelines
 
-
-    # -- CAMPAIGNS (NEW) --
+    # ─── CAMPAIGNS ───
     def campaign_create(self, name, sequence_id, total_leads=0, auto_advance=1):
-        """Create a new outreach campaign."""
         cur = self.execute("""
             INSERT INTO outreach_campaigns (name, sequence_id, status, total_leads, auto_advance)
             VALUES (?, ?, 'draft', ?, ?)
         """, (name, sequence_id, total_leads, auto_advance))
         self.commit()
+        if self.is_postgres:
+            id_row = self.execute("SELECT lastval()").fetchone()
+            return id_row[0]
         return cur.lastrowid
 
     def campaign_get(self, campaign_id):
@@ -660,14 +800,12 @@ class Database:
         self.commit()
 
     def campaign_get_batches(self, campaign_id):
-        """Get all batches in a campaign."""
         rows = self.execute("""
             SELECT * FROM batches WHERE campaign_id=? ORDER BY day_offset, created_at
         """, (campaign_id,)).fetchall()
         return [dict(r) for r in rows]
 
     def campaign_get_pipeline(self, campaign_id):
-        """Get full pipeline status for a campaign."""
         campaign = self.campaign_get(campaign_id)
         if not campaign:
             return None
@@ -697,7 +835,6 @@ class Database:
         }
 
     def get_next_batch_in_sequence(self, batch_id):
-        """Get the next batch in a campaign sequence."""
         batch = self.batch_get(batch_id)
         if not batch:
             return None
@@ -715,17 +852,7 @@ class Database:
 
         return dict(rows[0]) if rows else None
 
-
-    def get_scheduled_batches(self):
-        """Get all batches that are scheduled (ready to run if time passed)."""
-        rows = self.execute("""
-            SELECT * FROM batches 
-            WHERE status='scheduled' 
-            ORDER BY scheduled_at
-        """).fetchall()
-        return [dict(r) for r in rows]
-
-    # -- DASHBOARD SUMMARY --
+    # ─── DASHBOARD SUMMARY ───
     def get_dashboard_summary(self):
         summary = {"sequences": {}, "global": {}}
 
@@ -768,9 +895,7 @@ class Database:
         return summary
 
     def get_recent_activity(self, batch_id=None, limit=10):
-        """Get recent activity log entries."""
         try:
-            # Ensure table exists
             self.execute("""
                 CREATE TABLE IF NOT EXISTS activity_log (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -779,6 +904,7 @@ class Database:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            self.commit()
 
             if batch_id:
                 rows = self.execute(
@@ -794,4 +920,3 @@ class Database:
         except Exception as e:
             print(f"Activity log error: {e}")
             return []
-

@@ -1,132 +1,104 @@
 """
-Seed database from CSV files on first run.
-This ensures data persists across Render redeploys.
+seed_db.py — Import CSV data into database on startup.
+Works with both SQLite and PostgreSQL.
 """
 
+import os
 import csv
-import sqlite3
-import json
 from pathlib import Path
-from datetime import datetime
-
-API_DIR = Path(__file__).parent
-DB_PATH = API_DIR / "campaign_data.db"
-
-
-def _find_csv(filename: str):
-    """Find a CSV file — checks csv_data/ folder first, then root."""
-    path = API_DIR / "csv_data" / filename
-    if path.exists():
-        return path
-    path = API_DIR / filename
-    if path.exists():
-        return path
-    return None
-
+from db import Database
 
 def seed_database():
-    """Import all CSV data into SQLite database."""
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
+    """Import all CSV files into the database."""
+    db = Database()
 
-    # Recipients
-    f = _find_csv("recipients.csv")
-    if f:
-        with open(f, 'r', encoding='utf-8') as fp:
-            r = csv.DictReader(fp)
-            c = 0
-            for row in r:
+    base_dir = Path(__file__).parent
+
+    # Import recipients from CSV
+    recipients_file = base_dir / "batch_recipients.csv"
+    if recipients_file.exists():
+        print(f"[Seed] Importing recipients from {recipients_file}")
+        with open(recipients_file, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            imported = 0
+            for row in reader:
                 try:
-                    cursor.execute("INSERT OR IGNORE INTO recipients (id, sequence_id, email, name, org, extra_json, import_status, import_error, imported_at, batched) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (int(row['id']), row['sequence_id'], row['email'].lower().strip(), row['name'], row['org'], row.get('extra_json', '{}'), row.get('import_status', 'success'), row.get('import_error', None), row.get('imported_at', datetime.now().isoformat()), int(row.get('batched', 0))))
-                    c += 1
-                except: pass
-            conn.commit()
-            print(f"[SEED] {c} recipients")
+                    batch_id = row.get("batch_id", "")
+                    sequence_id = row.get("sequence_id", "school")
+                    email = row.get("email", "").strip().lower()
+                    name = row.get("name", "").strip()
+                    org = row.get("org", "").strip()
+                    extra = row.get("extra_json", "")
 
-    # Batches
-    f = _find_csv("batches.csv")
-    if f:
-        with open(f, 'r', encoding='utf-8') as fp:
-            r = csv.DictReader(fp)
-            c = 0
-            for row in r:
+                    if not email or "@" not in email:
+                        continue
+
+                    # Add to recipients
+                    db.recipient_add(sequence_id, email, name, org, extra)
+                    imported += 1
+                except Exception as e:
+                    print(f"[Seed] Skip row: {e}")
+            print(f"[Seed] Imported {imported} recipients")
+
+    # Import batches from CSV
+    batches_file = base_dir / "batches.csv"
+    if batches_file.exists():
+        print(f"[Seed] Importing batches from {batches_file}")
+        with open(batches_file, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            imported = 0
+            for row in reader:
                 try:
-                    cursor.execute("INSERT OR IGNORE INTO batches (id, name, sequence_id, status, scheduled_at, timezone, send_rate, stagger_minutes, day_offset, created_at, started_at, completed_at, parent_batch_id, campaign_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (int(row['id']), row['name'], row['sequence_id'], row['status'], row.get('scheduled_at') or None, row.get('timezone', 'Asia/Kolkata'), int(row.get('send_rate', 0)), int(row.get('stagger_minutes', 0)), int(row.get('day_offset', 1)), row.get('created_at'), row.get('started_at') or None, row.get('completed_at') or None, int(row['parent_batch_id']) if row.get('parent_batch_id') else None, int(row['campaign_id']) if row.get('campaign_id') else None))
-                    c += 1
-                except: pass
-            conn.commit()
-            print(f"[SEED] {c} batches")
+                    name = row.get("name", "").strip()
+                    sequence_id = row.get("sequence_id", "school").strip()
+                    status = row.get("status", "draft").strip()
+                    scheduled_at = row.get("scheduled_at", "").strip()
+                    day_offset = int(row.get("day_offset", 1))
 
-    # Batch Recipients
-    f = _find_csv("batch_recipients.csv")
-    if f:
-        with open(f, 'r', encoding='utf-8') as fp:
-            r = csv.DictReader(fp)
-            c = 0
-            for row in r:
+                    if not name:
+                        continue
+
+                    # Check if batch already exists
+                    existing = db.execute(
+                        "SELECT id FROM batches WHERE name=?", (name,)
+                    ).fetchone()
+
+                    if not existing:
+                        batch_id = db.batch_create(
+                            name=name,
+                            sequence_id=sequence_id,
+                            scheduled_at=scheduled_at if scheduled_at else None,
+                            day_offset=day_offset
+                        )
+                        db.batch_update_status(batch_id, status)
+                        imported += 1
+                except Exception as e:
+                    print(f"[Seed] Skip batch row: {e}")
+            print(f"[Seed] Imported {imported} batches")
+
+    # Import blacklist from CSV
+    blacklist_file = base_dir / "blacklist.csv"
+    if blacklist_file.exists():
+        print(f"[Seed] Importing blacklist from {blacklist_file}")
+        with open(blacklist_file, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            imported = 0
+            for row in reader:
                 try:
-                    cursor.execute("INSERT OR IGNORE INTO batch_recipients (batch_id, recipient_id, status, sent_at, opened_at, replied_at, bounced_at) VALUES (?, ?, ?, ?, ?, ?, ?)", (int(row['batch_id']), int(row['recipient_id']), row.get('status', 'pending'), row.get('sent_at') or None, row.get('opened_at') or None, row.get('replied_at') or None, row.get('bounced_at') or None))
-                    c += 1
-                except: pass
-            conn.commit()
-            print(f"[SEED] {c} batch links")
+                    email = row.get("email", "").strip().lower()
+                    reason = row.get("reason", "imported").strip()
 
-    # Blacklist
-    f = _find_csv("blacklist.csv")
-    if f:
-        with open(f, 'r', encoding='utf-8') as fp:
-            r = csv.DictReader(fp)
-            c = 0
-            for row in r:
-                try:
-                    cursor.execute("INSERT OR IGNORE INTO blacklist (id, email, reason, source, added_by, added_at) VALUES (?, ?, ?, ?, ?, ?)", (int(row['id']), row['email'].lower().strip(), row.get('reason', 'imported'), row.get('source', 'user'), row.get('added_by', 'user'), row.get('added_at')))
-                    c += 1
-                except: pass
-            conn.commit()
-            print(f"[SEED] {c} blacklist")
+                    if not email or "@" not in email:
+                        continue
 
-    # Templates
-    f = _find_csv("templates.csv")
-    if f:
-        with open(f, 'r', encoding='utf-8') as fp:
-            r = csv.DictReader(fp)
-            c = 0
-            for row in r:
-                try:
-                    cursor.execute("INSERT OR IGNORE INTO templates (sequence_id, day, subject, html_body, source, locked, cached_at) VALUES (?, ?, ?, ?, ?, ?, ?)", (row['sequence_id'], int(row['day']), row['subject'], row['html_body'], row.get('source', 'synced'), int(row.get('locked', 0)), row.get('cached_at')))
-                    c += 1
-                except: pass
-            conn.commit()
-            print(f"[SEED] {c} templates")
+                    if not db.blacklist_has(email):
+                        db.blacklist_add(email, reason, "csv_import")
+                        imported += 1
+                except Exception as e:
+                    print(f"[Seed] Skip blacklist row: {e}")
+            print(f"[Seed] Imported {imported} blacklisted emails")
 
-    # Sends
-    f = _find_csv("sends.csv")
-    if f:
-        with open(f, 'r', encoding='utf-8') as fp:
-            r = csv.DictReader(fp)
-            c = 0
-            for row in r:
-                try:
-                    cursor.execute("INSERT OR IGNORE INTO sends (id, recipient_id, batch_id, day, subject, draft_id, status, created_at, sent_at, opened_at, clicked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (int(row['id']), int(row['recipient_id']), int(row['batch_id']) if row.get('batch_id') else None, int(row['day']), row.get('subject', ''), row.get('draft_id', ''), row.get('status', 'drafted'), row.get('created_at'), row.get('sent_at') or None, row.get('opened_at') or None, row.get('clicked_at') or None))
-                    c += 1
-                except: pass
-            conn.commit()
-            print(f"[SEED] {c} sends")
+    print("[Seed] Database seeding complete")
 
-    # Replies
-    f = _find_csv("replies.csv")
-    if f:
-        with open(f, 'r', encoding='utf-8') as fp:
-            r = csv.DictReader(fp)
-            c = 0
-            for row in r:
-                try:
-                    cursor.execute("INSERT OR IGNORE INTO replies (id, send_id, thread_id, message_id, from_addr, subject, body, sentiment, summary, draft_reply_id, status, received_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (int(row['id']), int(row['send_id']) if row.get('send_id') else None, row['thread_id'], row['message_id'], row.get('from_addr', ''), row.get('subject', ''), row.get('body', ''), row.get('sentiment', ''), row.get('summary', ''), row.get('draft_reply_id') or None, row.get('status', 'pending'), row.get('received_at'), row.get('created_at')))
-                    c += 1
-                except: pass
-            conn.commit()
-            print(f"[SEED] {c} replies")
-
-    conn.close()
-    print("[SEED] Done!")
+if __name__ == "__main__":
+    seed_database()
