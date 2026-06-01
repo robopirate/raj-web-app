@@ -10,7 +10,12 @@ import sys
 import json
 import threading
 import time
+import pickle
 from datetime import datetime, timedelta
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import Flow
+from googleapiclient.discovery import build
 
 # Add parent dir to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -27,6 +32,21 @@ import sqlite3
 import re
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "raj_web.db")
+
+# Gmail OAuth config - read from environment variables (secure)
+GMAIL_CREDENTIALS = {
+    "web": {
+        "client_id": os.environ.get("GOOGLE_CLIENT_ID", ""),
+        "project_id": os.environ.get("GOOGLE_PROJECT_ID", "work-assistant-494216"),
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+        "client_secret": os.environ.get("GOOGLE_CLIENT_SECRET", ""),
+        "redirect_uris": [os.environ.get("GOOGLE_REDIRECT_URI", "https://raj-web-app.onrender.com/oauth2callback")]
+    }
+}
+
+SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
@@ -372,6 +392,52 @@ def api_engine_stop():
 @app.route("/api/engine/status")
 def api_engine_status():
     return jsonify({"running": engine_running})
+
+# --- Gmail Auth Routes ---
+
+@app.route("/auth/gmail")
+def auth_gmail():
+    """Start Gmail OAuth flow"""
+    flow = Flow.from_client_config(GMAIL_CREDENTIALS, SCOPES)
+    flow.redirect_uri = GMAIL_CREDENTIALS["web"]["redirect_uris"][0]
+
+    authorization_url, state = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true'
+    )
+
+    session['state'] = state
+    return redirect(authorization_url)
+
+@app.route("/oauth2callback")
+def oauth2callback():
+    """Handle Gmail OAuth callback"""
+    state = session.get('state')
+
+    flow = Flow.from_client_config(GMAIL_CREDENTIALS, SCOPES, state=state)
+    flow.redirect_uri = GMAIL_CREDENTIALS["web"]["redirect_uris"][0]
+
+    authorization_response = request.url
+    flow.fetch_token(authorization_response=authorization_response)
+
+    credentials = flow.credentials
+
+    # Save token
+    token_path = os.path.join(os.path.dirname(__file__), 'token.pickle')
+    with open(token_path, 'wb') as token:
+        pickle.dump(credentials, token)
+
+    log_activity("Gmail connected successfully")
+    flash("Gmail connected!", "success")
+    return redirect(url_for('index'))
+
+@app.route("/api/gmail/status")
+def api_gmail_status():
+    """Check if Gmail is connected"""
+    token_path = os.path.join(os.path.dirname(__file__), 'token.pickle')
+    if os.path.exists(token_path):
+        return jsonify({"connected": True})
+    return jsonify({"connected": False})
 
 # --- Run ---
 
