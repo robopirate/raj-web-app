@@ -378,7 +378,7 @@ class Database:
                 id SERIAL PRIMARY KEY,
                 action TEXT NOT NULL,
                 details TEXT,
-                user TEXT DEFAULT 'system',
+                created_by TEXT DEFAULT 'system',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )""",
             """CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action)""",
@@ -704,7 +704,7 @@ class Database:
 
     # ─── AUDIT LOG ───
     def log_action(self, action, details=None, user='system'):
-        self.execute("INSERT INTO audit_log (action, details, user) VALUES (?, ?, ?)", (action, details, user))
+        self.execute("INSERT INTO audit_log (action, details, created_by) VALUES (?, ?, ?)", (action, details, user))
         self.commit()
 
     def get_audit_log(self, limit=50):
