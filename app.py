@@ -1,446 +1,499 @@
 """
-Raj Web App - RoboPirate Email Automation
-Flask backend wrapping the engine and database
+Raj Web App - Flask Backend v2.0
+Production-ready with CSV database seeding + SPA routing
 """
 
-from flask import Flask, render_template, jsonify, request, redirect, url_for, session, flash
-from flask_cors import CORS
 import os
 import sys
-import json
-import threading
-import time
-import pickle
+import re
+import sqlite3
 from datetime import datetime, timedelta
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import Flow
-from googleapiclient.discovery import build
+from pathlib import Path
 
-# Add parent dir to path for imports
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from flask import Flask, jsonify, request, send_from_directory
+from flask_cors import CORS
 
-app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "raj-secret-key-2026")
+# ─── Paths ───
+API_DIR = Path(__file__).parent
+sys.path.insert(0, str(API_DIR))
+
+# ─── Import RoboPirate modules ───
+from db import Database
+from engine import CampaignEngine
+
+# ─── Seed database from CSVs (before Flask starts) ───
+print("[INIT] Checking database...")
+from seed_db import seed_database
+seed_database()
+
+# ─── Flask App ───
+app = Flask(__name__, static_folder='dist', static_url_path='')
 CORS(app)
 
-# --- Import existing modules (adapted for web) ---
-# We'll create lightweight wrappers that work with web
+# ─── Globals ───
+db = None
+gmail = None
+engine = None
+brain = None
 
-# Database wrapper
-import sqlite3
-import re
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "raj_web.db")
+def init_services():
+    """Initialize database, engine, and brain. Gmail is optional."""
+    global db, gmail, engine, brain
 
-# Gmail OAuth config - read from environment variables (secure)
-GMAIL_CREDENTIALS = {
-    "web": {
-        "client_id": os.environ.get("GOOGLE_CLIENT_ID", ""),
-        "project_id": os.environ.get("GOOGLE_PROJECT_ID", "work-assistant-494216"),
-        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-        "token_uri": "https://oauth2.googleapis.com/token",
-        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-        "client_secret": os.environ.get("GOOGLE_CLIENT_SECRET", ""),
-        "redirect_uris": [os.environ.get("GOOGLE_REDIRECT_URI", "https://raj-web-app.onrender.com/oauth2callback")]
-    }
-}
+    db = Database()
+    print("[INIT] Database connected")
 
-SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
+    # Gmail is optional — app works without it
+    try:
+        from gmail import GmailClient
+        gmail = GmailClient()
+        print("[INIT] Gmail connected")
+    except Exception as e:
+        print(f"[INIT] Gmail not available: {e}")
+        gmail = None
 
-def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    engine = CampaignEngine(db, gmail) if gmail else CampaignEngine(db, None)
+    print("[INIT] Engine initialized")
 
-def init_db():
-    conn = get_db()
-    c = conn.cursor()
+    # Start engine silently (no Gmail = no sending, but UI works)
+    try:
+        engine.start()
+        print("[INIT] Engine started")
+    except Exception as e:
+        print(f"[INIT] Engine start warning: {e}")
 
-    # Batches table
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS batches (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            sequence_id TEXT,
-            status TEXT DEFAULT 'draft',
-            scheduled_at TEXT,
-            parent_batch_id INTEGER,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
+    # Raj brain
+    try:
+        from raj_brain import RajBrain
+        brain = RajBrain(engine)
+        print("[INIT] Raj brain initialized")
+    except Exception as e:
+        print(f"[INIT] Brain init warning: {e}")
+        brain = None
 
-    # Recipients table
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS recipients (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            batch_id INTEGER,
-            email TEXT NOT NULL,
-            name TEXT,
-            org TEXT,
-            status TEXT DEFAULT 'pending',
-            sent_at TEXT,
-            extra_json TEXT,
-            imported_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (batch_id) REFERENCES batches(id)
-        )
-    """)
 
-    # Templates table
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS templates (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            subject TEXT,
-            body TEXT,
-            sequence_id TEXT,
-            day_num INTEGER,
-            locked INTEGER DEFAULT 0
-        )
-    """)
+# ─── SPA Routing ───
+@app.route('/')
+def serve_index():
+    return send_from_directory(app.static_folder, 'index.html')
 
-    # Blacklist table
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS blacklist (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE NOT NULL,
-            reason TEXT,
-            added_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
 
-    # Meta table
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS meta (
-            key TEXT PRIMARY KEY,
-            value TEXT
-        )
-    """)
+@app.route('/<path:path>')
+def serve_static(path):
+    """Serve static files or fallback to index.html for SPA routes."""
+    file_path = os.path.join(app.static_folder, path)
+    if os.path.exists(file_path) and os.path.isfile(file_path):
+        return send_from_directory(app.static_folder, path)
+    return send_from_directory(app.static_folder, 'index.html')
 
-    # Activity log
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS activity_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            message TEXT,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
 
-    conn.commit()
-    conn.close()
-    print("[DB] Initialized")
-
-init_db()
-
-# --- Database helpers ---
-
-def db_query(sql, params=(), one=False):
-    conn = get_db()
-    c = conn.cursor()
-    c.execute(sql, params)
-    rows = c.fetchall()
-    conn.close()
-    if one:
-        return rows[0] if rows else None
-    return [dict(r) for r in rows]
-
-def db_execute(sql, params=()):
-    conn = get_db()
-    c = conn.cursor()
-    c.execute(sql, params)
-    conn.commit()
-    last_id = c.lastrowid
-    conn.close()
-    return last_id
-
-# --- Engine state ---
-engine_running = False
-engine_thread = None
-
-def log_activity(msg):
-    db_execute("INSERT INTO activity_log (message) VALUES (?)", (msg,))
-    print(f"[LOG] {msg}")
-
-# --- Routes ---
-
-@app.route("/")
-def index():
-    """Main dashboard"""
-    return render_template("dashboard.html")
-
-@app.route("/chat")
-def chat():
-    """Raj chat interface"""
-    return render_template("chat.html")
-
-# --- API: Dashboard ---
-
-@app.route("/api/dashboard")
+# ═══════════════════════════════════════════════
+#  DASHBOARD
+# ═══════════════════════════════════════════════
+@app.route('/api/dashboard')
 def api_dashboard():
-    """Get dashboard summary data"""
-    # Day-wise totals
-    days = db_query("""
-        SELECT 
-            COUNT(*) as total,
-            SUM(CASE WHEN status='sent' THEN 1 ELSE 0 END) as sent,
-            SUM(CASE WHEN status='bounced' THEN 1 ELSE 0 END) as bounced,
-            SUM(CASE WHEN status='replied' THEN 1 ELSE 0 END) as replied
-        FROM recipients
-    """)[0]
+    try:
+        summary = engine.get_summary() if engine else {"sequences": {}, "global": {}}
+        families = _get_batch_families()
+        return jsonify({"success": True, "summary": summary, "families": families})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
-    # Active batches grouped by family
-    batches = db_query("SELECT * FROM batches ORDER BY created_at DESC")
 
-    families = {}
+def _get_batch_families():
+    if not db:
+        return []
+
+    batches = db.batch_get_all()
+    if not batches:
+        return []
+
+    families_dict = {}
     for b in batches:
-        fam = extract_family_name(b["name"])
-        if fam not in families:
-            families[fam] = {"D1": None, "D3": None, "D5": None, "D7": None, "D10": None}
-        day = extract_day_from_name(b["name"])
-        if day in families[fam]:
-            families[fam][day] = b
+        name = b.get("name", "")
+        family_name = re.sub(r'[-_]D\d+$', '', name, flags=re.I)
+        family_name = re.sub(r'(?<![Bb])[-_]B\d+$', '', family_name, flags=re.I)
+        family_name = re.sub(r'[-_]+$', '', family_name)
+        family_name = family_name.strip() or name
 
-    # Add counts to each batch
-    for fam_name, days_dict in families.items():
-        for day_code, batch in days_dict.items():
-            if batch:
-                counts = db_query("""
-                    SELECT 
-                        COUNT(*) as total,
-                        SUM(CASE WHEN status='sent' THEN 1 ELSE 0 END) as sent
-                    FROM recipients WHERE batch_id = ?
-                """, (batch["id"],))[0]
-                batch["total"] = counts["total"] or 0
-                batch["sent"] = counts["sent"] or 0
-                batch["due"] = batch["total"] - batch["sent"]
+        if family_name not in families_dict:
+            families_dict[family_name] = {
+                "name": family_name,
+                "sequence_id": b.get("sequence_id", ""),
+                "total_recipients": 0,
+                "days": {"D1": None, "D3": None, "D5": None, "D7": None, "D10": None}
+            }
 
-    return jsonify({
-        "days": days,
-        "families": families,
-        "engine_running": engine_running
-    })
+        day = "D1"
+        m = re.search(r'[-_]D(\d+)', name, re.I)
+        if m and m.group(1) in ["1", "3", "5", "7", "10"]:
+            day = f"D{m.group(1)}"
+        else:
+            m = re.search(r'[-_]B(\d+)', name, re.I)
+            if m:
+                bn = int(m.group(1))
+                day_map = {1: "D1", 2: "D1", 3: "D3", 4: "D3", 5: "D5", 6: "D5", 7: "D7", 8: "D7", 9: "D10", 10: "D10"}
+                day = day_map.get(bn, "D1")
 
-# --- API: Batches ---
-
-@app.route("/api/batches")
-def api_batches():
-    batches = db_query("SELECT * FROM batches ORDER BY created_at DESC")
-    for b in batches:
-        counts = db_query("""
-            SELECT status, COUNT(*) as count FROM recipients WHERE batch_id = ? GROUP BY status
-        """, (b["id"],))
-        b["counts"] = {c["status"]: c["count"] for c in counts}
-    return jsonify(batches)
-
-@app.route("/api/batch/<int:batch_id>/start", methods=["POST"])
-def api_batch_start(batch_id):
-    db_execute("UPDATE batches SET status = 'running' WHERE id = ?", (batch_id,))
-    log_activity(f"Batch {batch_id} started")
-    return jsonify({"success": True, "status": "running"})
-
-@app.route("/api/batch/<int:batch_id>/pause", methods=["POST"])
-def api_batch_pause(batch_id):
-    db_execute("UPDATE batches SET status = 'paused' WHERE id = ?", (batch_id,))
-    log_activity(f"Batch {batch_id} paused")
-    return jsonify({"success": True, "status": "paused"})
-
-@app.route("/api/batch/<int:batch_id>/recipients")
-def api_batch_recipients(batch_id):
-    recs = db_query("SELECT * FROM recipients WHERE batch_id = ?", (batch_id,))
-    return jsonify(recs)
-
-# --- API: Templates ---
-
-@app.route("/api/templates")
-def api_templates():
-    templates = db_query("SELECT * FROM templates ORDER BY sequence_id, day_num")
-    return jsonify(templates)
-
-# --- API: Blacklist ---
-
-@app.route("/api/blacklist")
-def api_blacklist():
-    items = db_query("SELECT * FROM blacklist ORDER BY added_at DESC LIMIT 100")
-    return jsonify(items)
-
-# --- API: Activity Log ---
-
-@app.route("/api/activity")
-def api_activity():
-    logs = db_query("SELECT * FROM activity_log ORDER BY created_at DESC LIMIT 50")
-    return jsonify(logs)
-
-# --- API: Import ---
-
-@app.route("/api/import", methods=["POST"])
-def api_import():
-    if "file" not in request.files:
-        return jsonify({"error": "No file uploaded"}), 400
-
-    file = request.files["file"]
-    sequence = request.form.get("sequence", "school")
-    batch_size = int(request.form.get("batch_size", 50))
-
-    # TODO: Parse Excel/CSV and create batches
-    log_activity(f"Import requested: {file.filename} ({sequence}, batch_size={batch_size})")
-    return jsonify({"success": True, "message": "Import processing..."})
-
-# --- API: Bounce Scan ---
-
-@app.route("/api/scan/bounces", methods=["POST"])
-def api_scan_bounces():
-    # TODO: Integrate with Gmail API for bounce scan
-    log_activity("Bounce scan requested")
-    return jsonify({"success": True, "message": "Bounce scan started"})
-
-# --- API: Chat ---
-
-@app.route("/api/chat", methods=["POST"])
-def api_chat():
-    data = request.json
-    message = data.get("message", "").lower()
-
-    # Simple command parser (expand later)
-    response = "I didn't understand that. Try: 'start batch', 'show dashboard', 'scan bounces', 'help'"
-
-    if "start" in message and "batch" in message:
-        response = "To start a batch, click the ▶ button on any Ready pill in the dashboard."
-    elif "bounce" in message or "scan" in message:
-        response = "Click the 'Scan' button in the top bar to run a bounce scan."
-    elif "help" in message:
-        response = "Commands: start batch, pause batch, scan bounces, show dashboard, create batch, import leads"
-    elif "dashboard" in message or "status" in message:
-        response = "Dashboard shows all active batches with Day 1/3/5/7/10 pipeline. Green = Done, Yellow = Ready, Grey = Queue."
-    elif "import" in message or "upload" in message:
-        response = "Go to the Import tab to upload Excel/CSV files with leads."
-    elif "hello" in message or "hi" in message:
-        response = "Hello! I'm Raj, your email automation assistant. How can I help?"
-
-    return jsonify({"response": response})
-
-# --- Helpers ---
-
-def extract_family_name(name):
-    """Extract family name from batch name"""
-    if not name:
-        return "Unknown"
-    # Remove day suffixes
-    name = re.sub(r'[-_]?D\d+.*$', '', name, flags=re.IGNORECASE)
-    name = re.sub(r'[-_]?Day\s*\d+.*$', '', name, flags=re.IGNORECASE)
-    name = re.sub(r'[-_]?B\d+.*$', '', name, flags=re.IGNORECASE)
-    return name.strip() or "Unknown"
-
-def extract_day_from_name(name):
-    """Extract day code from batch name"""
-    if not name:
-        return "D1"
-    match = re.search(r'[D-](\d+)', name, re.IGNORECASE)
-    if match:
-        day_num = int(match.group(1))
-        day_map = {1: "D1", 3: "D3", 5: "D5", 7: "D7", 10: "D10"}
-        return day_map.get(day_num, f"D{day_num}")
-    return "D1"
-
-# --- Engine runner (background thread) ---
-
-def engine_loop():
-    """Background engine that sends emails from running batches"""
-    global engine_running
-    while engine_running:
         try:
-            # Find running batches
-            running = db_query("SELECT * FROM batches WHERE status = 'running'")
-            for batch in running:
-                # Get next pending recipient
-                pending = db_query(
-                    "SELECT * FROM recipients WHERE batch_id = ? AND status = 'pending' LIMIT 1",
-                    (batch["id"],)
-                )
-                if pending:
-                    rec = pending[0]
-                    # TODO: Send email via Gmail API
-                    db_execute("UPDATE recipients SET status = 'sent', sent_at = ? WHERE id = ?",
-                              (datetime.now().isoformat(), rec["id"]))
-                    log_activity(f"Sent to {rec['email']} ({batch['name']})")
-                    time.sleep(120)  # 2 min stagger
-                else:
-                    # All sent - mark completed
-                    db_execute("UPDATE batches SET status = 'completed' WHERE id = ?", (batch["id"],))
-                    log_activity(f"Batch {batch['name']} completed")
-            time.sleep(10)
-        except Exception as e:
-            log_activity(f"Engine error: {e}")
-            time.sleep(30)
+            counts = db.batch_count_by_status(b["id"])
+            total = sum(counts.values())
+            sent = counts.get("sent", 0)
+        except:
+            total = 0
+            sent = 0
 
-@app.route("/api/engine/start", methods=["POST"])
-def api_engine_start():
-    global engine_running, engine_thread
-    if not engine_running:
-        engine_running = True
-        engine_thread = threading.Thread(target=engine_loop, daemon=True)
-        engine_thread.start()
-        log_activity("Engine started")
-    return jsonify({"running": engine_running})
+        scheduled = b.get("scheduled_at")
+        date_text = ""
+        if scheduled:
+            for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%Y-%m-%d %H:%M:%S.%f"]:
+                try:
+                    dt = datetime.strptime(scheduled, fmt)
+                    date_text = dt.strftime("%d %b")
+                    break
+                except ValueError:
+                    continue
+        else:
+            day_num = int(day.replace("D", ""))
+            date_text = (datetime.now() + timedelta(days=day_num)).strftime("%d %b")
 
-@app.route("/api/engine/stop", methods=["POST"])
-def api_engine_stop():
-    global engine_running
-    engine_running = False
-    log_activity("Engine stopped")
-    return jsonify({"running": engine_running})
+        families_dict[family_name]["days"][day] = {
+            "batch_id": b["id"],
+            "batch_name": b["name"],
+            "status": b.get("status", "draft"),
+            "sent": sent,
+            "total": total,
+            "scheduled_at": scheduled,
+            "date_text": date_text,
+        }
+        families_dict[family_name]["total_recipients"] = max(families_dict[family_name]["total_recipients"], total)
 
-@app.route("/api/engine/status")
+    return list(families_dict.values())
+
+
+# ═══════════════════════════════════════════════
+#  BATCHES
+# ═══════════════════════════════════════════════
+@app.route('/api/batches', methods=['GET'])
+def api_batches_list():
+    try:
+        batches = db.batch_get_all() if db else []
+        for b in batches:
+            try:
+                counts = db.batch_count_by_status(b["id"])
+                b["total_recipients"] = sum(counts.values())
+                b["sent"] = counts.get("sent", 0)
+            except:
+                b["total_recipients"] = 0
+                b["sent"] = 0
+        return jsonify({"success": True, "batches": batches})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/batches', methods=['POST'])
+def api_batch_create():
+    try:
+        data = request.json or {}
+        batch_id, error = db.batch_from_pool(
+            name=data.get('name', 'New Batch'),
+            sequence_id=data.get('sequence_id', 'school'),
+            batch_size=data.get('size', 50),
+            day_offset=data.get('day_offset', 1)
+        )
+        if error:
+            return jsonify({"success": False, "error": error}), 400
+        return jsonify({"success": True, "batch_id": batch_id})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/batches/<int:batch_id>/run', methods=['POST'])
+def api_batch_run(batch_id):
+    try:
+        db.batch_update_status(batch_id, 'running')
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/batches/<int:batch_id>/pause', methods=['POST'])
+def api_batch_pause(batch_id):
+    try:
+        db.batch_update_status(batch_id, 'paused')
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/batches/<int:batch_id>', methods=['DELETE'])
+def api_batch_delete(batch_id):
+    try:
+        db.batch_delete(batch_id)
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ═══════════════════════════════════════════════
+#  CHAT
+# ═══════════════════════════════════════════════
+@app.route('/api/chat', methods=['POST'])
+def api_chat():
+    try:
+        data = request.json or {}
+        message = data.get('message', '')
+        if not brain:
+            return jsonify({"response": "Raj is initializing... Please wait a moment."})
+        result = brain.process(message)
+        return jsonify({
+            "response": result.get("response", "I processed your request, sir."),
+            "action": result.get("action"),
+            "result": result.get("result"),
+        })
+    except Exception as e:
+        return jsonify({"response": f"I'm having trouble right now. Error: {str(e)[:100]}"})
+
+
+# ═══════════════════════════════════════════════
+#  TEMPLATES
+# ═══════════════════════════════════════════════
+@app.route('/api/templates')
+def api_templates():
+    try:
+        result = {}
+        for seq_id in ["school", "csr"]:
+            result[seq_id] = {}
+            for day in [1, 3, 5, 7, 10]:
+                tmpl = db.template_get(seq_id, day) if db else None
+                if tmpl:
+                    result[seq_id][day] = {
+                        "sequence_id": seq_id, "day": day,
+                        "subject": tmpl.get("subject", ""),
+                        "locked": bool(tmpl.get("locked")),
+                        "source": tmpl.get("source", "unknown"),
+                        "has_body": bool(tmpl.get("html_body")),
+                    }
+        return jsonify({"success": True, "templates": result})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/templates/<seq_id>/<int:day>')
+def api_template_get(seq_id, day):
+    try:
+        tmpl = db.template_get(seq_id, day) if db else None
+        return jsonify({"success": True, "template": tmpl})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/templates/sync', methods=['POST'])
+def api_templates_sync():
+    try:
+        if not engine or not hasattr(engine, 'sync_templates'):
+            return jsonify({"success": False, "error": "Gmail not connected"})
+        result = engine.sync_templates()
+        return jsonify({"success": True, **result})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ═══════════════════════════════════════════════
+#  IMPORT
+# ═══════════════════════════════════════════════
+@app.route('/api/import', methods=['POST'])
+def api_import():
+    try:
+        if 'file' not in request.files:
+            return jsonify({"success": False, "error": "No file uploaded"})
+        file = request.files['file']
+        sequence_id = request.form.get('sequence_id', 'school')
+        if file.filename == '':
+            return jsonify({"success": False, "error": "Empty filename"})
+
+        upload_dir = API_DIR / 'uploads'
+        upload_dir.mkdir(exist_ok=True)
+        filepath = upload_dir / file.filename
+        file.save(str(filepath))
+
+        if engine and hasattr(engine, 'smart_import'):
+            result = engine.smart_import(str(filepath), sequence_id)
+            return jsonify(result)
+        else:
+            return jsonify({"success": False, "error": "Engine not ready"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ═══════════════════════════════════════════════
+#  BLACKLIST
+# ═══════════════════════════════════════════════
+@app.route('/api/blacklist')
+def api_blacklist():
+    try:
+        entries = db.blacklist_get_all() if db else []
+        return jsonify({"success": True, "blacklist": entries})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/blacklist', methods=['POST'])
+def api_blacklist_add():
+    try:
+        data = request.json or {}
+        email = data.get('email', '')
+        if email:
+            db.blacklist_add(email, data.get('reason', 'manual'))
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/blacklist', methods=['DELETE'])
+def api_blacklist_remove():
+    try:
+        data = request.json or {}
+        email = data.get('email', '')
+        if email:
+            db.blacklist_remove(email)
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ═══════════════════════════════════════════════
+#  REPLIES
+# ═══════════════════════════════════════════════
+@app.route('/api/replies')
+def api_replies():
+    try:
+        if not db:
+            return jsonify({"success": True, "replies": []})
+        rows = db.execute("SELECT * FROM replies ORDER BY received_at DESC LIMIT 100").fetchall()
+        return jsonify({"success": True, "replies": [dict(r) for r in rows]})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/replies/<int:reply_id>/handled', methods=['POST'])
+def api_reply_handled(reply_id):
+    try:
+        if db:
+            db.execute("UPDATE replies SET status='handled' WHERE id=?", (reply_id,))
+            db.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/scan-replies', methods=['POST'])
+def api_scan_replies():
+    try:
+        if not engine or not hasattr(engine, 'scan_replies'):
+            return jsonify({"success": False, "error": "Engine not ready"})
+        count = engine.scan_replies()
+        return jsonify({"success": True, "count": count})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ═══════════════════════════════════════════════
+#  BOUNCE SCAN
+# ═══════════════════════════════════════════════
+@app.route('/api/scan-bounces', methods=['POST'])
+def api_scan_bounces():
+    try:
+        if not engine or not hasattr(engine, 'scan_bounces'):
+            return jsonify({"success": False, "error": "Engine not ready"})
+        result = engine.scan_bounces()
+        return jsonify({"success": True, **(result if isinstance(result, dict) else {"count": result})})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ═══════════════════════════════════════════════
+#  ENGINE CONTROL
+# ═══════════════════════════════════════════════
+@app.route('/api/engine/status')
 def api_engine_status():
-    return jsonify({"running": engine_running})
+    try:
+        return jsonify({
+            "running": engine.is_running() if engine else False,
+            "paused": engine.is_paused() if engine else False,
+        })
+    except:
+        return jsonify({"running": False, "paused": False})
 
-# --- Gmail Auth Routes ---
 
-@app.route("/auth/gmail")
-def auth_gmail():
-    """Start Gmail OAuth flow"""
-    flow = Flow.from_client_config(GMAIL_CREDENTIALS, SCOPES)
-    flow.redirect_uri = GMAIL_CREDENTIALS["web"]["redirect_uris"][0]
+@app.route('/api/engine/<action>', methods=['POST'])
+def api_engine_action(action):
+    try:
+        if not engine:
+            return jsonify({"success": False, "error": "Engine not initialized"}), 500
+        if action == 'start' and hasattr(engine, 'start'):
+            engine.start()
+        elif action == 'stop' and hasattr(engine, 'stop'):
+            engine.stop()
+        elif action == 'pause' and hasattr(engine, 'pause'):
+            engine.pause()
+        elif action == 'resume' and hasattr(engine, 'resume'):
+            engine.resume()
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
-    authorization_url, state = flow.authorization_url(
-        access_type='offline',
-        include_granted_scopes='true'
-    )
 
-    session['state'] = state
-    return redirect(authorization_url)
+# ═══════════════════════════════════════════════
+#  SETTINGS
+# ═══════════════════════════════════════════════
+@app.route('/api/settings')
+def api_settings():
+    try:
+        settings = {
+            "brief_email": db.get_meta("brief_email") or "itsomkarsingh@gmail.com" if db else "",
+            "send_rate": db.get_meta("send_rate") or "45" if db else "45",
+            "stagger_minutes": db.get_meta("stagger_minutes") or "2" if db else "2",
+            "morning_hour": db.get_meta("morning_hour") or "8" if db else "8",
+            "eod_hour": db.get_meta("eod_hour") or "19" if db else "19",
+            "auto_advance": (db.get_meta("auto_advance") or "true") != "false" if db else True,
+            "sunday_filter": (db.get_meta("sunday_filter") or "true") != "false" if db else True,
+        }
+        return jsonify({
+            "success": True,
+            "settings": settings,
+            "engine": {
+                "running": engine.is_running() if engine else False,
+                "paused": engine.is_paused() if engine else False,
+            }
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route("/oauth2callback")
-def oauth2callback():
-    """Handle Gmail OAuth callback"""
-    state = session.get('state')
 
-    flow = Flow.from_client_config(GMAIL_CREDENTIALS, SCOPES, state=state)
-    flow.redirect_uri = GMAIL_CREDENTIALS["web"]["redirect_uris"][0]
+@app.route('/api/settings', methods=['POST'])
+def api_settings_save():
+    try:
+        data = request.json or {}
+        if db:
+            for key in ['brief_email', 'send_rate', 'stagger_minutes', 'morning_hour', 'eod_hour']:
+                if key in data:
+                    db.set_meta(key, str(data[key]))
+            for key in ['auto_advance', 'sunday_filter']:
+                if key in data:
+                    db.set_meta(key, 'true' if data[key] else 'false')
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
-    authorization_response = request.url
-    flow.fetch_token(authorization_response=authorization_response)
 
-    credentials = flow.credentials
-
-    # Save token
-    token_path = os.path.join(os.path.dirname(__file__), 'token.pickle')
-    with open(token_path, 'wb') as token:
-        pickle.dump(credentials, token)
-
-    log_activity("Gmail connected successfully")
-    flash("Gmail connected!", "success")
-    return redirect(url_for('index'))
-
-@app.route("/api/gmail/status")
-def api_gmail_status():
-    """Check if Gmail is connected"""
-    token_path = os.path.join(os.path.dirname(__file__), 'token.pickle')
-    if os.path.exists(token_path):
-        return jsonify({"connected": True})
-    return jsonify({"connected": False})
-
-# --- Run ---
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+# ═══════════════════════════════════════════════
+#  INIT
+# ═══════════════════════════════════════════════
+if __name__ == '__main__':
+    init_services()
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
+else:
+    init_services()
