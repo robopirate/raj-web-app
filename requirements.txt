@@ -1,11 +1,25 @@
+# Raj Web App — Python Dependencies
+# Install: pip install -r requirements.txt
+
+# ─── Web Framework ───
 Flask==3.0.0
 flask-cors==4.0.0
-psycopg2-binary==2.9.10
+
+# ─── Database ───
+psycopg2==2.9.9
+
+# ─── Google APIs ───
 google-auth==2.23.4
 google-auth-oauthlib==1.1.0
 google-auth-httplib2==0.2.0
 google-api-python-client==2.109.0
+
+# ─── HTTP / Requests ───
 requests==2.31.0
+
+# ─── Data Processing ───
 pandas==2.2.3
 openpyxl==3.1.2
+
+# ─── WSGI Server (for production) ───
 gunicorn==21.2.0

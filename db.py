@@ -1,7 +1,7 @@
 """
-db.py -- RoboPirate Campaign Database v5.2
+db.py -- RoboPirate Campaign Database v5.3
 Dual database: SQLite (local) + PostgreSQL (Render cloud)
-Fixed: psycopg2 cursor support, reserved keyword handling
+Fixed: psycopg2 cursor support, reserved keywords, syntax errors
 """
 
 import os
@@ -214,7 +214,7 @@ class Database:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 action TEXT NOT NULL,
                 details TEXT,
-                "user" TEXT DEFAULT 'system',
+                user TEXT DEFAULT 'system',
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             );
             CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action);
@@ -375,7 +375,7 @@ class Database:
                 id SERIAL PRIMARY KEY,
                 action TEXT NOT NULL,
                 details TEXT,
-                "user" TEXT DEFAULT 'system',
+                user TEXT DEFAULT 'system',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )""",
             """CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action)""",
@@ -431,7 +431,6 @@ class Database:
             rows = cursor.fetchall()
             if not rows:
                 return []
-            # Get column names from cursor description
             cols = [desc[0] for desc in cursor.description]
             return [dict(zip(cols, row)) for row in rows]
         else:
@@ -730,7 +729,7 @@ class Database:
 
     # ─── AUDIT LOG ───
     def log_action(self, action, details=None, user='system'):
-        self.execute("INSERT INTO audit_log (action, details, "user") VALUES (?, ?, ?)", (action, details, user))
+        self.execute("INSERT INTO audit_log (action, details, user) VALUES (?, ?, ?)", (action, details, user))
         self.commit()
 
     def get_audit_log(self, limit=50):
