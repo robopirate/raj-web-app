@@ -1,6 +1,6 @@
 """
 Raj Web App - RoboPirate Email Automation
-v5.9.6 - Fixed to match actual repo structure
+v5.9.7 FINAL - Uses exact repo classes, matches frontend format
 """
 import os
 import sys
@@ -36,7 +36,7 @@ def index():
 # ── Health ────────────────────────────────────────────────────────────
 @app.route('/health')
 def health_check():
-    return jsonify({"status": "ok", "version": "5.9.6", "timestamp": datetime.now().isoformat()})
+    return jsonify({"status": "ok", "version": "5.9.7", "timestamp": datetime.now().isoformat()})
 
 # ═══════════════════════════════════════════════════════════════════════
 # GMAIL OAUTH
@@ -124,13 +124,13 @@ def api_dashboard():
         return jsonify({"success": False, "error": str(e)}), 500
 
 # ═══════════════════════════════════════════════════════════════════════
-# BATCHES - WITH RECIPIENT COUNTS
+# BATCHES - MATCHES FRONTEND FORMAT
 # ═══════════════════════════════════════════════════════════════════════
 @app.route('/api/batches')
 def api_batches():
     try:
         batches = db.batch_get_all()
-        # Add recipient_count to each batch
+        # Add recipient_count to each batch - frontend expects this field
         for b in batches:
             b['recipient_count'] = db.batch_count_recipients(b['id'])
             # Convert datetime objects to ISO strings for JSON
@@ -162,7 +162,8 @@ def api_batch_get(batch_id):
 def api_batch_run(batch_id):
     try:
         db.batch_update_status(batch_id, 'running')
-        engine.start_batch(batch_id) if hasattr(engine, 'start_batch') else None
+        if hasattr(engine, 'start_batch'):
+            engine.start_batch(batch_id)
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -203,13 +204,12 @@ def api_chat():
     try:
         data = request.json or {}
         message = data.get('message', '')
-        # Simple response for now
         return jsonify({"response": "Raj received: " + message[:50]})
     except Exception as e:
         return jsonify({"response": f"Error: {str(e)[:100]}"})
 
 # ═══════════════════════════════════════════════════════════════════════
-# TEMPLATES
+# TEMPLATES - MATCHES FRONTEND FORMAT
 # ═══════════════════════════════════════════════════════════════════════
 @app.route('/api/templates')
 def api_templates():
