@@ -576,14 +576,39 @@ def api_settings_save():
 # ═══════════════════════════════════════════════
 # DATA MIGRATION (one-time CSV import)
 # ═══════════════════════════════════════════════
-@app.route('/api/migrate-csv', methods=['POST'])
+@app.route('/api/migrate-csv', methods=['GET', 'POST'])
 def api_migrate_csv():
     """Force re-import all CSV files into database."""
     try:
+        import sys
+        import os
+        # Ensure seed_db can be found
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         from seed_db import seed_database
         seed_database(force=True)
+
+        if request.method == 'GET':
+            return """
+            <html><head><meta charset="utf-8"><title>Migration Complete</title>
+            <style>body{font-family:sans-serif;text-align:center;padding:50px;background:#1a1a2e;color:#fff;}
+            .success{color:#4ade80;font-size:24px;}a{color:#60a5fa;font-size:18px;}</style></head>
+            <body><div class="success">✅ Desktop Data Migrated!</div>
+            <p>All your CSV data (recipients, batches, sends, blacklist, templates, replies) has been imported.</p>
+            <p><a href="/">Go to Dashboard</a></p></body></html>
+            """
         return jsonify({"success": True, "message": "CSV data re-imported"})
     except Exception as e:
+        import traceback
+        error_detail = traceback.format_exc()
+        print("[MIGRATE ERROR] " + str(e))
+        print(traceback.format_exc())
+        if request.method == 'GET':
+            html = "<html><body style='font-family:sans-serif;text-align:center;padding:50px;background:#1a1a2e;color:#fff;'>"
+            html += "<div style='color:#f87171;font-size:24px;'>❌ Migration Failed</div>"
+            html += "<p>" + str(e) + "</p>"
+            html += "<p><a href='/' style='color:#60a5fa;font-size:18px;'>Back to Dashboard</a></p>"
+            html += "</body></html>"
+            return html, 500
         return jsonify({"success": False, "error": str(e)}), 500
 
 # ═══════════════════════════════════════════════
