@@ -1,77 +1,62 @@
 """
-app.py -- Raj Web App v5.9 (Clean Build)
-Minimal, stable, web-safe
+Raj Web App - RoboPirate Email Automation
+v5.9.5 - Fixed batch recipient counts
 """
-
 import os
-import re
 import sys
 import json
 import time
 import threading
+from datetime import datetime, timedelta
 from pathlib import Path
-from datetime import datetime
-from flask import Flask, request, jsonify, send_from_directory, g
-from flask_cors import CORS
+from flask import Flask, jsonify, request, redirect, session, send_from_directory, render_template_string
 
-app = Flask(__name__, static_folder='dist', static_url_path='')
-CORS(app)
-
+# ── App Setup ─────────────────────────────────────────────────────────
 API_DIR = Path(__file__).parent
+app = Flask(__name__, static_folder=str(API_DIR / 'dist'))
+app.secret_key = os.environ.get('SECRET_KEY', 'robopirate-dev-secret')
 
-engine = None
-brain = None
-_db_instance = None
-_db_lock = threading.Lock()
+# ── Database ──────────────────────────────────────────────────────────
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
-# ─── Database Singleton ───
+DATABASE_URL = os.environ.get('DATABASE_URL')
+_db_conn = None
+
 def get_db():
-    global _db_instance
-    if _db_instance is None:
-        with _db_lock:
-            if _db_instance is None:
-                from db import Database
-                _db_instance = Database()
-    return _db_instance
+    global _db_conn
+    if _db_conn is None and DATABASE_URL:
+        _db_conn = psycopg2.connect(DATABASE_URL)
+        _db_conn.autocommit = True
+    return _db_conn
 
-# ─── Lazy Engine Init ───
+# ── Engine & Brain ────────────────────────────────────────────────────
+_engine = None
+_brain = None
+
 def get_engine():
-    global engine
-    if engine is None:
-        db = get_db()
-        from engine import CampaignEngine
-        engine = CampaignEngine(db)
+    global _engine
+    if _engine is None:
         try:
-            from gmail_web import GmailWebClient
-            gmail = GmailWebClient(db)
-            if gmail.is_authenticated():
-                engine.gmail = gmail
-                print("[App] Gmail auto-connected")
+            from engine import RajEngine
+            db = get_db()
+            _engine = RajEngine(db_conn=db)
+            _engine.start()
         except Exception as e:
-            print(f"[App] Gmail auto-connect failed: {e}")
-        engine.start()
-    return engine
+            print(f"[Engine] Init error: {e}")
+    return _engine
 
-# ─── Lazy Brain Init ───
 def get_brain():
-    global brain
-    if brain is None:
-        from raj_brain import RajBrain
-        brain = RajBrain(get_engine())
-    return brain
+    global _brain
+    if _brain is None:
+        try:
+            from raj_brain import RajBrain
+            _brain = RajBrain()
+        except Exception as e:
+            print(f"[Brain] Init error: {e}")
+    return _brain
 
-@app.before_request
-def before_request():
-    g.db = get_db()
-    if engine is None:
-        get_engine()
-    if brain is None:
-        get_brain()
-
-@app.route('/')
-def serve_index():
-    return send_from_directory(app.static_folder, 'index.html')
-
+# ── Static Files ────────────────────────────────────────────────────────
 @app.route('/<path:path>')
 def serve_static(path):
     file_path = os.path.join(app.static_folder, path)
@@ -79,23 +64,36 @@ def serve_static(path):
         return send_from_directory(app.static_folder, path)
     return send_from_directory(app.static_folder, 'index.html')
 
+@app.route('/')
+def index():
+    return send_from_directory(app.static_folder, 'index.html')
+
+# ── Health ────────────────────────────────────────────────────────────
 @app.route('/health')
 def health_check():
-    return jsonify({"status": "ok", "version": "5.9", "timestamp": datetime.now().isoformat()})
+    return jsonify({"status": "ok", "version": "5.9.5", "timestamp": datetime.now().isoformat()})
 
-# ═══════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════
 # GMAIL OAUTH
-# ═══════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════
 
 @app.route('/connect-gmail')
 def connect_gmail_page():
-    return """<html><head><meta charset="utf-8"><title>Connect Gmail</title>
-    <style>body{font-family:sans-serif;text-align:center;padding:50px;background:#0f172a;color:#e2e8f0;}
-    .btn{display:inline-block;padding:16px 40px;background:#38bdf8;color:#0f172a;border-radius:10px;text-decoration:none;font-weight:700;font-size:16px;margin-top:20px;}
-    .btn:hover{background:#7dd3fc;}</style></head>
-    <body><h1 style="color:#38bdf8;">Connect Gmail</h1><p>Click below to authorize Raj to send emails.</p>
-    <a href="/api/gmail/auth-url" class="btn">Connect Gmail Account</a><br><br>
-    <a href="/" style="color:#94a3b8;text-decoration:none;">Back to Dashboard</a></body></html>"""
+    try:
+        db = get_db()
+        from gmail_web import GmailWebClient
+        client = GmailWebClient(db)
+        url = client.get_auth_url()
+        return f"""
+        <html><body style="font-family:Arial;text-align:center;padding:50px;background:#0f172a;color:#fff;">
+        <h1>🔐 Connect Gmail</h1>
+        <p>Raj can now send emails from the cloud.</p>
+        <a href="{url}" style="display:inline-block;padding:15px 30px;background:#38bdf8;color:#0f172a;text-decoration:none;border-radius:8px;font-weight:bold;">Connect Gmail Account</a>
+        <p><a href="/" style="color:#94a3b8;">← Back to Dashboard</a></p>
+        </body></html>
+        """
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/oauth2callback')
 def oauth2callback():
@@ -106,10 +104,23 @@ def oauth2callback():
         result = client.handle_callback(request.args.get('code'))
         if result.get('success'):
             eng = get_engine()
-            eng.gmail = client
-            return "<html><body style='text-align:center;padding:50px;background:#0f172a;color:#34d399;font-family:sans-serif;'><h1>Gmail Connected!</h1><p>Raj can now send emails.</p><a href='/' style='color:#38bdf8;font-size:18px;'>Go to Dashboard</a></body></html>"
+            if eng:
+                eng.gmail = client
+            return """
+            <html><body style="font-family:Arial;text-align:center;padding:50px;background:#0f172a;color:#fff;">
+            <h1>✅ Gmail Connected!</h1>
+            <p>Raj can now send emails.</p>
+            <a href="/" style="color:#38bdf8;">Go to Dashboard</a>
+            </body></html>
+            """
         else:
-            return "<html><body style='text-align:center;padding:50px;background:#0f172a;color:#f87171;font-family:sans-serif;'><h1>Connection Failed</h1><p>" + result.get('error','') + "</p><a href='/connect-gmail' style='color:#38bdf8;'>Try Again</a></body></html>", 400
+            return f"""
+            <html><body style="font-family:Arial;text-align:center;padding:50px;background:#0f172a;color:#fff;">
+            <h1>❌ Connection Failed</h1>
+            <p>{result.get('error','')}</p>
+            <a href="/connect-gmail" style="color:#38bdf8;">Try Again</a> | <a href="/" style="color:#94a3b8;">Dashboard</a>
+            </body></html>
+            """, 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -137,23 +148,27 @@ def api_gmail_status():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-# ═══════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════
 # DASHBOARD
-# ═══════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════
 @app.route('/api/dashboard')
 def api_dashboard():
     try:
         db = get_db()
+        if not db:
+            return jsonify({"success": False, "error": "DB not connected"}), 500
+
+        cur = db.cursor()
 
         # Recipients by sequence
-        cur = db.execute("SELECT sequence_id, COUNT(*) FROM recipients GROUP BY sequence_id")
+        cur.execute("SELECT sequence_id, COUNT(*) FROM recipients GROUP BY sequence_id")
         recipients_by_seq = {r[0]: r[1] for r in cur.fetchall()}
 
-        # Per-sequence sends using JOIN (now IDs are fixed!)
-        cur = db.execute("""
-            SELECT r.sequence_id, s.status, COUNT(*) 
-            FROM sends s 
-            JOIN recipients r ON s.recipient_id = r.id 
+        # Per-sequence sends using JOIN
+        cur.execute("""
+            SELECT r.sequence_id, s.status, COUNT(*)
+            FROM sends s
+            JOIN recipients r ON s.recipient_id = r.id
             GROUP BY r.sequence_id, s.status
         """)
         sends_by_seq_status = {}
@@ -164,28 +179,47 @@ def api_dashboard():
             sends_by_seq_status[seq][status] = count
 
         # Blacklist count
-        cur = db.execute("SELECT COUNT(*) FROM blacklist")
+        cur.execute("SELECT COUNT(*) FROM blacklist")
         bl_count = cur.fetchone()[0]
 
-        # Active batches
-        cur = db.execute("SELECT COUNT(*) FROM batches WHERE status != 'completed'")
-        active_batches = cur.fetchone()[0]
+        # Active batches (non-completed) with recipient counts
+        cur.execute("""
+            SELECT b.id, b.name, b.sequence_id, b.day_offset, b.status,
+                   b.created_at, b.scheduled_at, b.started_at,
+                   COUNT(br.recipient_id) as recipient_count
+            FROM batches b
+            LEFT JOIN batch_recipients br ON b.id = br.batch_id
+            WHERE b.status != 'completed'
+            GROUP BY b.id
+            ORDER BY b.created_at DESC
+            LIMIT 5
+        """)
+        active = []
+        for row in cur.fetchall():
+            active.append({
+                'id': row[0], 'name': row[1], 'sequence_id': row[2],
+                'day_offset': row[3], 'status': row[4], 'created_at': row[5],
+                'scheduled_at': row[6], 'started_at': row[7],
+                'recipient_count': row[8] or 0
+            })
 
         # Templates
-        cur = db.execute("SELECT sequence_id, COUNT(*) FROM templates GROUP BY sequence_id")
+        cur.execute("SELECT sequence_id, COUNT(*) FROM templates GROUP BY sequence_id")
         templates_by_seq = {r[0]: r[1] for r in cur.fetchall()}
 
         # Day-wise sends per sequence
         day_wise = {}
         for seq_id in ["school", "csr"]:
-            cur = db.execute("""
-                SELECT s.day, COUNT(*) 
-                FROM sends s 
-                JOIN recipients r ON s.recipient_id = r.id 
-                WHERE r.sequence_id = ? AND s.status = 'sent'
-                GROUP BY s.day ORDER BY s.day
+            cur.execute("""
+                SELECT s.day_offset, COUNT(*)
+                FROM sends s
+                JOIN recipients r ON s.recipient_id = r.id
+                WHERE r.sequence_id = %s AND s.status = 'sent'
+                GROUP BY s.day_offset ORDER BY s.day_offset
             """, (seq_id,))
             day_wise[seq_id] = {r[0]: r[1] for r in cur.fetchall()}
+
+        cur.close()
 
         # Build summary
         summary = {"sequences": {}, "global": {}}
@@ -229,85 +263,175 @@ def api_dashboard():
             "blacklist_count": bl_count,
             "pending_replies": 0,
             "drafted_replies": 0,
-            "active_batches": active_batches
+            "active_batches": len(active)
         }
 
-        return jsonify({"success": True, "summary": summary})
+        return jsonify({"success": True, "summary": summary, "active_batches": active})
     except Exception as e:
         import traceback
         print(f"[ERROR] Dashboard: {e}")
         print(traceback.format_exc())
         return jsonify({"success": False, "error": str(e)}), 500
 
-# ═══════════════════════════════════════════════
-# BATCHES
-# ═══════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════
+# BATCHES - FIXED WITH RECIPIENT COUNTS
+# ═══════════════════════════════════════════════════════════════════════
 @app.route('/api/batches')
 def api_batches():
     try:
-        db = get_db()
-        batches = db.batch_get_all() if db else []
+        db_conn = get_db()
+        if not db_conn:
+            return jsonify({"success": False, "error": "DB not connected"}), 500
+
+        cur = db_conn.cursor()
+
+        # Get all batches with recipient counts via JOIN
+        cur.execute("""
+            SELECT b.id, b.name, b.sequence_id, b.day_offset, b.status, 
+                   b.created_at, b.scheduled_at, b.started_at, b.completed_at,
+                   b.parent_batch_id, b.stagger_minutes, b.send_rate,
+                   COUNT(br.recipient_id) as recipient_count
+            FROM batches b
+            LEFT JOIN batch_recipients br ON b.id = br.batch_id
+            GROUP BY b.id
+            ORDER BY b.created_at DESC
+        """)
+
+        batches = []
+        for row in cur.fetchall():
+            batches.append({
+                'id': row[0],
+                'name': row[1],
+                'sequence_id': row[2],
+                'day_offset': row[3],
+                'status': row[4],
+                'created_at': row[5].isoformat() if row[5] else None,
+                'scheduled_at': row[6].isoformat() if row[6] else None,
+                'started_at': row[7].isoformat() if row[7] else None,
+                'completed_at': row[8].isoformat() if row[8] else None,
+                'parent_batch_id': row[9],
+                'stagger_minutes': row[10],
+                'send_rate': row[11],
+                'recipient_count': row[12] or 0  # <-- THE FIX
+            })
+
+        cur.close()
         return jsonify({"success": True, "batches": batches})
     except Exception as e:
+        import traceback
+        print(f"[ERROR] Batches: {e}")
+        print(traceback.format_exc())
         return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/batches/<batch_id>')
+@app.route('/api/batches/<int:batch_id>')
 def api_batch_get(batch_id):
     try:
-        db = get_db()
-        batch = db.batch_get(batch_id) if db else None
-        if not batch:
+        db_conn = get_db()
+        if not db_conn:
+            return jsonify({"success": False, "error": "DB not connected"}), 500
+
+        cur = db_conn.cursor()
+        cur.execute("SELECT * FROM batches WHERE id = %s", (batch_id,))
+        row = cur.fetchone()
+        if not row:
+            cur.close()
             return jsonify({"success": False, "error": "Batch not found"}), 404
-        recipients = db.batch_get_recipients(batch_id) if db else []
-        counts = db.batch_count_by_status(batch_id) if db else {}
+
+        # Get column names
+        cols = [desc[0] for desc in cur.description]
+        batch = dict(zip(cols, row))
+
+        # Get recipients
+        cur.execute("""
+            SELECT r.id, r.email, r.name, r.org, r.import_status
+            FROM recipients r
+            JOIN batch_recipients br ON r.id = br.recipient_id
+            WHERE br.batch_id = %s
+            ORDER BY r.name
+        """, (batch_id,))
+        recipients = []
+        for r in cur.fetchall():
+            recipients.append({
+                'id': r[0], 'email': r[1], 'name': r[2],
+                'org': r[3], 'import_status': r[4]
+            })
+
+        # Get send counts by status
+        cur.execute("""
+            SELECT status, COUNT(*) FROM sends WHERE batch_id = %s GROUP BY status
+        """, (batch_id,))
+        counts = {r[0]: r[1] for r in cur.fetchall()}
+
+        cur.close()
         return jsonify({"success": True, "batch": batch, "recipients": recipients, "counts": counts})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/batches/<batch_id>/run', methods=['POST'])
+@app.route('/api/batches/<int:batch_id>/run', methods=['POST'])
 def api_batch_run(batch_id):
     try:
-        db = get_db()
-        db.batch_update_status(batch_id, 'running')
+        db_conn = get_db()
+        cur = db_conn.cursor()
+        cur.execute("UPDATE batches SET status = 'running', started_at = NOW() WHERE id = %s", (batch_id,))
+        db_conn.commit()
+        cur.close()
+        eng = get_engine()
+        if eng and hasattr(eng, 'start_batch'):
+            eng.start_batch(batch_id)
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/batches/<batch_id>/pause', methods=['POST'])
+@app.route('/api/batches/<int:batch_id>/pause', methods=['POST'])
 def api_batch_pause(batch_id):
     try:
-        db = get_db()
-        db.batch_update_status(batch_id, 'paused')
+        db_conn = get_db()
+        cur = db_conn.cursor()
+        cur.execute("UPDATE batches SET status = 'paused' WHERE id = %s", (batch_id,))
+        db_conn.commit()
+        cur.close()
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/batches/<batch_id>', methods=['DELETE'])
+@app.route('/api/batches/<int:batch_id>', methods=['DELETE'])
 def api_batch_delete(batch_id):
     try:
-        db = get_db()
-        db.batch_delete(batch_id)
+        db_conn = get_db()
+        cur = db_conn.cursor()
+        cur.execute("DELETE FROM batch_recipients WHERE batch_id = %s", (batch_id,))
+        cur.execute("DELETE FROM batches WHERE id = %s", (batch_id,))
+        db_conn.commit()
+        cur.close()
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-# ═══════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════
 # POOL
-# ═══════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════
 @app.route('/api/pool/<sequence_id>')
 def api_pool(sequence_id):
     try:
-        db = get_db()
-        eng = get_engine()
-        count = eng.get_pool_count(sequence_id) if eng else 0
-        total = db.recipient_count(sequence_id) if db else 0
-        return jsonify({"success": True, "unbatched": count, "total": total})
+        db_conn = get_db()
+        cur = db_conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM recipients WHERE sequence_id = %s", (sequence_id,))
+        total = cur.fetchone()[0]
+        cur.execute("""
+            SELECT COUNT(*) FROM recipients r
+            WHERE r.sequence_id = %s AND r.id NOT IN (
+                SELECT DISTINCT recipient_id FROM batch_recipients
+            )
+        """, (sequence_id,))
+        unbatched = cur.fetchone()[0]
+        cur.close()
+        return jsonify({"success": True, "unbatched": unbatched, "total": total})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-# ═══════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════
 # CHAT
-# ═══════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════
 @app.route('/api/chat', methods=['POST'])
 def api_chat():
     try:
@@ -317,27 +441,41 @@ def api_chat():
         if not br:
             return jsonify({"response": "Raj is initializing..."})
         result = br.process(message)
-        return jsonify({"response": result.get("response", "I processed your request, sir."), "action": result.get("action"), "result": result.get("result")})
+        return jsonify({
+            "response": result.get("response", "I processed your request, sir."),
+            "action": result.get("action"),
+            "result": result.get("result")
+        })
     except Exception as e:
         import traceback
         print(f"[ERROR] Chat: {e}")
         print(traceback.format_exc())
         return jsonify({"response": f"Error: {str(e)[:100]}"})
 
-# ═══════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════
 # TEMPLATES
-# ═══════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════
 @app.route('/api/templates')
 def api_templates():
     try:
-        db = get_db()
+        db_conn = get_db()
+        cur = db_conn.cursor()
         result = {}
         for seq_id in ["school", "csr"]:
             result[seq_id] = {}
             for day in [1, 3, 5, 7, 10]:
-                tmpl = db.template_get(seq_id, day) if db else None
-                if tmpl:
-                    result[seq_id][day] = {"sequence_id": seq_id, "day": day, "subject": tmpl.get("subject", ""), "locked": bool(tmpl.get("locked")), "source": tmpl.get("source", "unknown"), "has_body": bool(tmpl.get("html_body"))}
+                cur.execute("""
+                    SELECT id, sequence_id, day_offset, subject, body, status, locked
+                    FROM templates WHERE sequence_id = %s AND day_offset = %s
+                """, (seq_id, day))
+                row = cur.fetchone()
+                if row:
+                    result[seq_id][day] = {
+                        "sequence_id": row[1], "day": row[2],
+                        "subject": row[3], "locked": bool(row[6]),
+                        "source": "db", "has_body": bool(row[4])
+                    }
+        cur.close()
         return jsonify({"success": True, "templates": result})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -345,9 +483,21 @@ def api_templates():
 @app.route('/api/templates/<seq_id>/<int:day>')
 def api_template_get(seq_id, day):
     try:
-        db = get_db()
-        tmpl = db.template_get(seq_id, day) if db else None
-        return jsonify({"success": True, "template": tmpl})
+        db_conn = get_db()
+        cur = db_conn.cursor()
+        cur.execute("""
+            SELECT id, sequence_id, day_offset, subject, body, status, locked
+            FROM templates WHERE sequence_id = %s AND day_offset = %s
+        """, (seq_id, day))
+        row = cur.fetchone()
+        cur.close()
+        if row:
+            tmpl = {
+                "id": row[0], "sequence_id": row[1], "day_offset": row[2],
+                "subject": row[3], "body": row[4], "status": row[5], "locked": bool(row[6])
+            }
+            return jsonify({"success": True, "template": tmpl})
+        return jsonify({"success": False, "error": "Template not found"}), 404
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -365,15 +515,21 @@ def api_templates_sync():
 @app.route('/api/templates/<seq_id>/<int:day>/lock', methods=['GET', 'POST'])
 def api_template_lock(seq_id, day):
     try:
-        db = get_db()
-        db.template_lock(seq_id, day)
-        return jsonify({"success": True})
+        db_conn = get_db()
+        cur = db_conn.cursor()
+        cur.execute(
+            "UPDATE templates SET locked = true WHERE sequence_id = %s AND day_offset = %s",
+            (seq_id, day)
+        )
+        db_conn.commit()
+        cur.close()
+        return jsonify({"success": True, "message": f"Template {seq_id} Day {day} locked"})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-# ═══════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════
 # IMPORT
-# ═══════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════
 @app.route('/api/import', methods=['POST'])
 def api_import():
     try:
@@ -399,14 +555,19 @@ def api_import():
         print(traceback.format_exc())
         return jsonify({"success": False, "error": str(e)}), 500
 
-# ═══════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════
 # BLACKLIST
-# ═══════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════
 @app.route('/api/blacklist')
 def api_blacklist():
     try:
-        db = get_db()
-        entries = db.blacklist_get_all() if db else []
+        db_conn = get_db()
+        cur = db_conn.cursor()
+        cur.execute("SELECT email, reason, added_at FROM blacklist ORDER BY added_at DESC")
+        entries = []
+        for row in cur.fetchall():
+            entries.append({'email': row[0], 'reason': row[1], 'added_at': row[2].isoformat() if row[2] else None})
+        cur.close()
         return jsonify({"success": True, "blacklist": entries})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -414,38 +575,57 @@ def api_blacklist():
 @app.route('/api/blacklist', methods=['POST'])
 def api_blacklist_add():
     try:
-        db = get_db()
+        db_conn = get_db()
         data = request.json or {}
         email = data.get('email', '')
         if email:
-            db.blacklist_add(email, data.get('reason', 'manual'))
+            cur = db_conn.cursor()
+            cur.execute(
+                "INSERT INTO blacklist (email, reason, added_at) VALUES (%s, %s, NOW()) ON CONFLICT (email) DO NOTHING",
+                (email, data.get('reason', 'manual'))
+            )
+            db_conn.commit()
+            cur.close()
             return jsonify({"success": True})
         return jsonify({"success": False, "error": "No email provided"}), 400
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-# ═══════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════
 # REPLIES
-# ═══════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════
 @app.route('/api/replies')
 def api_replies():
     try:
-        db = get_db()
-        if not db:
-            return jsonify({"success": True, "replies": []})
-        rows = db.execute("SELECT * FROM replies ORDER BY received_at DESC LIMIT 100").fetchall()
-        return jsonify({"success": True, "replies": [dict(r) for r in rows]})
+        db_conn = get_db()
+        cur = db_conn.cursor()
+        cur.execute("""
+            SELECT id, email, subject, received_at, category, status
+            FROM replies ORDER BY received_at DESC LIMIT 100
+        """)
+        replies = []
+        for row in cur.fetchall():
+            replies.append({
+                'id': row[0], 'email': row[1], 'subject': row[2],
+                'received_at': row[3].isoformat() if row[3] else None,
+                'category': row[4], 'status': row[5]
+            })
+        cur.close()
+        return jsonify({"success": True, "replies": replies})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-# ═══════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════
 # ENGINE CONTROL
-# ═══════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════
 @app.route('/api/engine/status')
 def api_engine_status():
     try:
         eng = get_engine()
-        return jsonify({"running": eng.is_running() if eng else False, "paused": eng.is_paused() if eng else False})
+        return jsonify({
+            "running": eng.is_running() if eng else False,
+            "paused": eng.is_paused() if eng else False
+        })
     except:
         return jsonify({"running": False, "paused": False})
 
@@ -467,51 +647,92 @@ def api_engine_action(action):
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-# ═══════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════
 # SETTINGS
-# ═══════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════
 @app.route('/api/settings')
 def api_settings():
     try:
-        db = get_db()
-        settings = {
-            "brief_email": db.get_meta("brief_email") or "itsomkarsinghhh@gmail.com" if db else "",
-            "send_rate": db.get_meta("send_rate") or "45" if db else "45",
-            "stagger_minutes": db.get_meta("stagger_minutes") or "2" if db else "2",
-            "morning_hour": db.get_meta("morning_hour") or "8" if db else "8",
-            "eod_hour": db.get_meta("eod_hour") or "19" if db else "19",
-            "auto_advance": (db.get_meta("auto_advance") or "true") != "false" if db else True,
-            "sunday_filter": (db.get_meta("sunday_filter") or "true") != "false" if db else True,
-        }
+        db_conn = get_db()
+        cur = db_conn.cursor()
+
+        settings = {}
+        for key in ['brief_email', 'send_rate', 'stagger_minutes', 'morning_hour', 'eod_hour']:
+            cur.execute("SELECT value FROM meta WHERE key = %s", (key,))
+            row = cur.fetchone()
+            settings[key] = row[0] if row else ''
+
+        for key in ['auto_advance', 'sunday_filter']:
+            cur.execute("SELECT value FROM meta WHERE key = %s", (key,))
+            row = cur.fetchone()
+            settings[key] = (row[0] if row else 'true') != 'false'
+
+        # Defaults
+        if not settings.get('brief_email'):
+            settings['brief_email'] = 'itsomkarsinghhh@gmail.com'
+        if not settings.get('send_rate'):
+            settings['send_rate'] = '45'
+        if not settings.get('stagger_minutes'):
+            settings['stagger_minutes'] = '2'
+        if not settings.get('morning_hour'):
+            settings['morning_hour'] = '8'
+        if not settings.get('eod_hour'):
+            settings['eod_hour'] = '19'
+
+        cur.close()
+
         eng = get_engine()
         gmail_status = False
         try:
             gmail_status = eng.gmail is not None and hasattr(eng.gmail, 'is_authenticated') and eng.gmail.is_authenticated()
         except:
             pass
-        return jsonify({"success": True, "settings": settings, "engine": {"running": eng.is_running() if eng else False, "paused": eng.is_paused() if eng else False}, "gmail": {"connected": gmail_status, "connect_url": "/connect-gmail"}})
+
+        return jsonify({
+            "success": True,
+            "settings": settings,
+            "engine": {
+                "running": eng.is_running() if eng else False,
+                "paused": eng.is_paused() if eng else False
+            },
+            "gmail": {
+                "connected": gmail_status,
+                "connect_url": "/connect-gmail"
+            }
+        })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/settings', methods=['POST'])
 def api_settings_save():
     try:
-        db = get_db()
+        db_conn = get_db()
         data = request.json or {}
-        if db:
-            for key in ['brief_email', 'send_rate', 'stagger_minutes', 'morning_hour', 'eod_hour']:
-                if key in data:
-                    db.set_meta(key, str(data[key]))
-            for key in ['auto_advance', 'sunday_filter']:
-                if key in data:
-                    db.set_meta(key, 'true' if data[key] else 'false')
+        cur = db_conn.cursor()
+
+        for key in ['brief_email', 'send_rate', 'stagger_minutes', 'morning_hour', 'eod_hour']:
+            if key in data:
+                cur.execute("""
+                    INSERT INTO meta (key, value) VALUES (%s, %s)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """, (key, str(data[key])))
+
+        for key in ['auto_advance', 'sunday_filter']:
+            if key in data:
+                cur.execute("""
+                    INSERT INTO meta (key, value) VALUES (%s, %s)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """, (key, 'true' if data[key] else 'false'))
+
+        db_conn.commit()
+        cur.close()
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-# ═══════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════
 # INIT
-# ═══════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
