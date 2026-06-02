@@ -1,6 +1,6 @@
 """
-app.py -- Raj Web App v5.6.1
-Fixed: Simplified connect-gmail page that ALWAYS shows the button
+app.py -- Raj Web App v5.7.2 (Minimal Fix)
+Only changes migration import and HTML strings
 """
 
 import os
@@ -14,16 +14,19 @@ from datetime import datetime
 from flask import Flask, request, jsonify, send_from_directory, g
 from flask_cors import CORS
 
+# ─── Flask App ───
 app = Flask(__name__, static_folder='dist', static_url_path='')
 CORS(app)
 
 API_DIR = Path(__file__).parent
 
+# ─── Global State ───
 engine = None
 brain = None
 _db_instance = None
 _db_lock = threading.Lock()
 
+# ─── Database Singleton (per thread safety) ───
 def get_db():
     global _db_instance
     if _db_instance is None:
@@ -33,12 +36,14 @@ def get_db():
                 _db_instance = Database()
     return _db_instance
 
+# ─── Lazy Engine Init ───
 def get_engine():
     global engine
     if engine is None:
         db = get_db()
         from engine import CampaignEngine
         engine = CampaignEngine(db)
+        # Try to auto-connect Gmail if token exists
         try:
             from gmail_web import GmailWebClient
             gmail = GmailWebClient(db)
@@ -47,9 +52,11 @@ def get_engine():
                 print("[App] Gmail auto-connected from stored token")
         except Exception as e:
             print(f"[App] Gmail auto-connect failed: {e}")
+        # Start engine loop
         engine.start()
     return engine
 
+# ─── Lazy Brain Init ───
 def get_brain():
     global brain
     if brain is None:
@@ -57,14 +64,17 @@ def get_brain():
         brain = RajBrain(get_engine())
     return brain
 
+# ─── Init on first request (not at import time) ───
 @app.before_request
 def before_request():
     g.db = get_db()
+    # Lazy init engine on first request
     if engine is None:
         get_engine()
     if brain is None:
         get_brain()
 
+# ─── SPA Routes ───
 @app.route('/')
 def serve_index():
     return send_from_directory(app.static_folder, 'index.html')
@@ -76,9 +86,10 @@ def serve_static(path):
         return send_from_directory(app.static_folder, path)
     return send_from_directory(app.static_folder, 'index.html')
 
+# ─── Health Check ───
 @app.route('/health')
 def health_check():
-    return jsonify({"status": "ok", "version": "5.6.1", "timestamp": datetime.now().isoformat()})
+    return jsonify({"status": "ok", "version": "5.7.2", "timestamp": datetime.now().isoformat()})
 
 # ═══════════════════════════════════════════════
 # GMAIL WEB OAUTH
@@ -271,7 +282,6 @@ CONNECT_HTML = """
             }
         }
 
-        // Check status on page load
         checkStatus();
     </script>
 </body>
@@ -754,27 +764,64 @@ def api_settings_save():
         return jsonify({"success": False, "error": str(e)}), 500
 
 # ═══════════════════════════════════════════════
-# DATA MIGRATION
+# DATA MIGRATION - FIXED v5.7.2
 # ═══════════════════════════════════════════════
 @app.route('/api/migrate-csv', methods=['GET', 'POST'])
 def api_migrate_csv():
     try:
         import sys
         import os
+        import io
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-        from simple_migrate import run_all as migrate_all
-        results = migrate_all()
+
+        old_stdout = sys.stdout
+        sys.stdout = buffer = io.StringIO()
+
+        from simple_migrate import run_all
+        results = run_all()
+
+        output = buffer.getvalue()
+        sys.stdout = old_stdout
+        print(output)
+
         if request.method == 'GET':
-            return """
-            <html><head><meta charset="utf-8"><title>Migration Complete</title>
-            <style>body{font-family:sans-serif;text-align:center;padding:50px;background:#0f172a;color:#e2e8f0;}
-            .success{color:#34d399;font-size:28px;margin-bottom:20px;}a{color:#38bdf8;font-size:18px;text-decoration:none;}
-            .btn{display:inline-block;padding:14px 32px;background:#38bdf8;color:#0f172a;border-radius:8px;margin-top:20px;font-weight:600;}</style></head>
-            <body><div class="success">✅ Desktop Data Migrated!</div>
-            <p>All your CSV data has been imported into the cloud database.</p>
-            <a href="/" class="btn">Go to Dashboard</a></body></html>
-            """
-        return jsonify({"success": True, "message": "CSV data re-imported"})
+            html_parts = []
+            html_parts.append('<html><head><meta charset="utf-8"><title>Migration Complete</title>')
+            html_parts.append('<style>')
+            html_parts.append('body{font-family:sans-serif;text-align:center;padding:50px;background:#0f172a;color:#e2e8f0;}')
+            html_parts.append('.success{color:#34d399;font-size:28px;margin-bottom:20px;}')
+            html_parts.append('.stats{color:#94a3b8;font-size:16px;line-height:1.8;margin:20px 0;}')
+            html_parts.append('a{color:#38bdf8;font-size:18px;text-decoration:none;}')
+            html_parts.append('.btn{display:inline-block;padding:14px 32px;background:#38bdf8;color:#0f172a;border-radius:8px;margin-top:20px;font-weight:600;}')
+            html_parts.append('.error{color:#f87171;}')
+            html_parts.append('pre{background:#0f172a;padding:15px;border-radius:8px;text-align:left;font-size:12px;overflow:auto;max-height:300px;color:#94a3b8;}')
+            html_parts.append('</style></head><body>')
+
+            total_imported = results['recipients'] + results['batches'] + results['sends'] + results['replies']
+
+            if total_imported > 0:
+                html_parts.append('<div class="success">✅ Desktop Data Migrated!</div>')
+                html_parts.append('<div class="stats">')
+                html_parts.append('Recipients: ' + str(results['recipients']) + '<br>')
+                html_parts.append('Batches: ' + str(results['batches']) + '<br>')
+                html_parts.append('Batch Links: ' + str(results['batch_recipients']) + '<br>')
+                html_parts.append('Sends: ' + str(results['sends']) + '<br>')
+                html_parts.append('Replies: ' + str(results['replies']) + '<br>')
+                html_parts.append('Blacklist: ' + str(results['blacklist']) + '<br>')
+                html_parts.append('Templates: ' + str(results['templates']))
+                html_parts.append('</div>')
+            else:
+                html_parts.append('<div class="success">⚠️ No data found to migrate</div>')
+                html_parts.append('<p>Make sure CSV files are in the same folder as the app.</p>')
+
+            if results.get('errors') and len(results['errors']) > 0:
+                html_parts.append('<p class="error">Errors: ' + str(len(results['errors'])) + ' (check logs)</p>')
+
+            html_parts.append('<pre>' + output.replace('<', '&lt;').replace('>', '&gt;') + '</pre>')
+            html_parts.append('<a href="/" class="btn">Go to Dashboard</a></body></html>')
+            return ''.join(html_parts)
+
+        return jsonify({"success": True, "results": results})
     except Exception as e:
         import traceback
         err_msg = str(e)
