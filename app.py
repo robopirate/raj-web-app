@@ -766,75 +766,94 @@ def api_settings_save():
 # ═══════════════════════════════════════════════
 # DATA MIGRATION - FIXED v5.7.2
 # ═══════════════════════════════════════════════
+# Global migration state
+_migration_running = False
+_migration_result = None
+_migration_output = ""
+
 @app.route('/api/migrate-csv', methods=['GET', 'POST'])
 def api_migrate_csv():
-    try:
-        import sys
-        import os
-        import io
-        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    """Force re-import all CSV files into database - runs in background."""
+    global _migration_running, _migration_result, _migration_output
 
-        old_stdout = sys.stdout
-        sys.stdout = buffer = io.StringIO()
+    # If migration is already running, show status
+    if _migration_running:
+        return """<html><body style='font-family:sans-serif;text-align:center;padding:50px;background:#0f172a;color:#e2e8f0;'>
+        <div style='color:#fbbf24;font-size:28px;margin-bottom:20px;'>⏳ Migration Running...</div>
+        <p>Data import is in progress. Refresh this page in 30 seconds.</p>
+        <p><a href='/' style='color:#38bdf8;font-size:18px;'>Back to Dashboard</a></p>
+        </body></html>"""
 
-        from simple_migrate import run_all
-        results = run_all()
+    # If migration completed, show results
+    if _migration_result is not None:
+        results = _migration_result
+        output = _migration_output
+        total = results['recipients'] + results['batches'] + results['sends'] + results['replies']
 
-        output = buffer.getvalue()
-        sys.stdout = old_stdout
-        print(output)
+        html = "<html><head><meta charset=\"utf-8\"><title>Migration Complete</title>"
+        html += "<style>body{font-family:sans-serif;text-align:center;padding:50px;background:#0f172a;color:#e2e8f0;}"
+        html += ".success{color:#34d399;font-size:28px;margin-bottom:20px;}"
+        html += ".stats{color:#94a3b8;font-size:16px;line-height:1.8;margin:20px 0;}"
+        html += "a{color:#38bdf8;font-size:18px;text-decoration:none;}"
+        html += ".btn{display:inline-block;padding:14px 32px;background:#38bdf8;color:#0f172a;border-radius:8px;margin-top:20px;font-weight:600;}"
+        html += "pre{background:#0f172a;padding:15px;border-radius:8px;text-align:left;font-size:11px;overflow:auto;max-height:200px;color:#94a3b8;}"
+        html += "</style></head><body>"
 
-        if request.method == 'GET':
-            html_parts = []
-            html_parts.append('<html><head><meta charset="utf-8"><title>Migration Complete</title>')
-            html_parts.append('<style>')
-            html_parts.append('body{font-family:sans-serif;text-align:center;padding:50px;background:#0f172a;color:#e2e8f0;}')
-            html_parts.append('.success{color:#34d399;font-size:28px;margin-bottom:20px;}')
-            html_parts.append('.stats{color:#94a3b8;font-size:16px;line-height:1.8;margin:20px 0;}')
-            html_parts.append('a{color:#38bdf8;font-size:18px;text-decoration:none;}')
-            html_parts.append('.btn{display:inline-block;padding:14px 32px;background:#38bdf8;color:#0f172a;border-radius:8px;margin-top:20px;font-weight:600;}')
-            html_parts.append('.error{color:#f87171;}')
-            html_parts.append('pre{background:#0f172a;padding:15px;border-radius:8px;text-align:left;font-size:12px;overflow:auto;max-height:300px;color:#94a3b8;}')
-            html_parts.append('</style></head><body>')
+        if total > 0:
+            html += "<div class=\"success\">✅ Desktop Data Migrated!</div>"
+            html += "<div class=\"stats\">"
+            html += "Recipients: " + str(results['recipients']) + "<br>"
+            html += "Batches: " + str(results['batches']) + "<br>"
+            html += "Sends: " + str(results['sends']) + "<br>"
+            html += "Replies: " + str(results['replies']) + "<br>"
+            html += "Blacklist: " + str(results['blacklist']) + "<br>"
+            html += "Templates: " + str(results['templates'])
+            html += "</div>"
+        else:
+            html += "<div class=\"success\">⚠️ No data imported</div>"
 
-            total_imported = results['recipients'] + results['batches'] + results['sends'] + results['replies']
+        html += "<pre>" + output.replace("<", "&lt;").replace(">", "&gt;") + "</pre>"
+        html += "<a href=\"/\" class=\"btn\">Go to Dashboard</a></body></html>"
+        return html
 
-            if total_imported > 0:
-                html_parts.append('<div class="success">✅ Desktop Data Migrated!</div>')
-                html_parts.append('<div class="stats">')
-                html_parts.append('Recipients: ' + str(results['recipients']) + '<br>')
-                html_parts.append('Batches: ' + str(results['batches']) + '<br>')
-                html_parts.append('Batch Links: ' + str(results['batch_recipients']) + '<br>')
-                html_parts.append('Sends: ' + str(results['sends']) + '<br>')
-                html_parts.append('Replies: ' + str(results['replies']) + '<br>')
-                html_parts.append('Blacklist: ' + str(results['blacklist']) + '<br>')
-                html_parts.append('Templates: ' + str(results['templates']))
-                html_parts.append('</div>')
-            else:
-                html_parts.append('<div class="success">⚠️ No data found to migrate</div>')
-                html_parts.append('<p>Make sure CSV files are in the same folder as the app.</p>')
+    # Start migration in background thread
+    def do_migration():
+        global _migration_running, _migration_result, _migration_output
+        _migration_running = True
+        _migration_result = None
+        _migration_output = ""
+        try:
+            import sys
+            import os
+            import io
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-            if results.get('errors') and len(results['errors']) > 0:
-                html_parts.append('<p class="error">Errors: ' + str(len(results['errors'])) + ' (check logs)</p>')
+            old_stdout = sys.stdout
+            sys.stdout = buffer = io.StringIO()
 
-            html_parts.append('<pre>' + output.replace('<', '&lt;').replace('>', '&gt;') + '</pre>')
-            html_parts.append('<a href="/" class="btn">Go to Dashboard</a></body></html>')
-            return ''.join(html_parts)
+            from simple_migrate import run_all
+            _migration_result = run_all()
 
-        return jsonify({"success": True, "results": results})
-    except Exception as e:
-        import traceback
-        err_msg = str(e)
-        print("[MIGRATE ERROR] " + err_msg)
-        print(traceback.format_exc())
-        if request.method == 'GET':
-            html = "<html><body style='font-family:sans-serif;text-align:center;padding:50px;background:#0f172a;color:#e2e8f0;'>"
-            html += "<div style='color:#f87171;font-size:28px;margin-bottom:20px;'>❌ Migration Failed</div>"
-            html += "<p>" + err_msg + "</p>"
-            html += "<p><a href='/' style='color:#38bdf8;font-size:18px;'>Back to Dashboard</a></p>"
-            html += "</body></html>"
-            return html, 500
-        return jsonify({"success": False, "error": err_msg}), 500
+            _migration_output = buffer.getvalue()
+            sys.stdout = old_stdout
+            print(_migration_output)
+        except Exception as e:
+            import traceback
+            _migration_output = "ERROR: " + str(e) + "\n" + traceback.format_exc()
+            print(_migration_output)
+        finally:
+            _migration_running = False
+
+    thread = threading.Thread(target=do_migration, daemon=True)
+    thread.start()
+
+    return """<html><body style='font-family:sans-serif;text-align:center;padding:50px;background:#0f172a;color:#e2e8f0;'>
+    <div style='color:#fbbf24;font-size:28px;margin-bottom:20px;'>🚀 Migration Started!</div>
+    <p>Importing your desktop data in the background...</p>
+    <p>This may take 1-2 minutes for 900+ recipients.</p>
+    <p><strong>Refresh this page in 30 seconds to see results.</strong></p>
+    <p><a href='/' style='color:#38bdf8;font-size:18px;'>Back to Dashboard</a></p>
+    </body></html>"""
 
 # ═══════════════════════════════════════════════
 # INIT
