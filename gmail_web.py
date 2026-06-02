@@ -23,7 +23,13 @@ try:
 except ImportError:
     raise ImportError("Google API libraries not installed. Run: pip install google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client")
 
-SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
+SCOPES = [
+    'https://www.googleapis.com/auth/gmail.modify',
+    'https://www.googleapis.com/auth/gmail.send',
+    'https://www.googleapis.com/auth/drive.file',
+    'https://www.googleapis.com/auth/drive.readonly',
+    'https://www.googleapis.com/auth/calendar'
+]
 
 class GmailWebClient:
     """Gmail client for web deployment using OAuth 2.0 web flow."""
