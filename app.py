@@ -1,6 +1,6 @@
 """
-app.py -- Raj Web App v5.6 COMPLETE
-Fixed: Added ALL Gmail OAuth routes, /connect-gmail page, complete migration
+app.py -- Raj Web App v5.6.1
+Fixed: Simplified connect-gmail page that ALWAYS shows the button
 """
 
 import os
@@ -14,19 +14,16 @@ from datetime import datetime
 from flask import Flask, request, jsonify, send_from_directory, g
 from flask_cors import CORS
 
-# ─── Flask App ───
 app = Flask(__name__, static_folder='dist', static_url_path='')
 CORS(app)
 
 API_DIR = Path(__file__).parent
 
-# ─── Global State ───
 engine = None
 brain = None
 _db_instance = None
 _db_lock = threading.Lock()
 
-# ─── Database Singleton ───
 def get_db():
     global _db_instance
     if _db_instance is None:
@@ -36,7 +33,6 @@ def get_db():
                 _db_instance = Database()
     return _db_instance
 
-# ─── Lazy Engine Init ───
 def get_engine():
     global engine
     if engine is None:
@@ -54,7 +50,6 @@ def get_engine():
         engine.start()
     return engine
 
-# ─── Lazy Brain Init ───
 def get_brain():
     global brain
     if brain is None:
@@ -70,7 +65,6 @@ def before_request():
     if brain is None:
         get_brain()
 
-# ─── SPA Routes ───
 @app.route('/')
 def serve_index():
     return send_from_directory(app.static_folder, 'index.html')
@@ -82,109 +76,214 @@ def serve_static(path):
         return send_from_directory(app.static_folder, path)
     return send_from_directory(app.static_folder, 'index.html')
 
-# ─── Health Check ───
 @app.route('/health')
 def health_check():
-    return jsonify({"status": "ok", "version": "5.6", "timestamp": datetime.now().isoformat()})
+    return jsonify({"status": "ok", "version": "5.6.1", "timestamp": datetime.now().isoformat()})
 
 # ═══════════════════════════════════════════════
 # GMAIL WEB OAUTH
 # ═══════════════════════════════════════════════
 
+CONNECT_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connect Gmail - Raj</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', system-ui, sans-serif; 
+            background: #0f172a; 
+            color: #e2e8f0; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            min-height: 100vh; 
+            padding: 20px;
+        }
+        .card { 
+            background: #1e293b; 
+            border-radius: 16px; 
+            padding: 40px; 
+            max-width: 500px; 
+            width: 100%; 
+            box-shadow: 0 20px 60px rgba(0,0,0,0.4); 
+            text-align: center; 
+        }
+        .logo { font-size: 48px; margin-bottom: 10px; }
+        h1 { color: #38bdf8; margin-bottom: 8px; font-size: 26px; }
+        .subtitle { color: #94a3b8; margin-bottom: 30px; font-size: 15px; }
+        .status-box { 
+            padding: 14px 20px; 
+            border-radius: 10px; 
+            margin-bottom: 25px; 
+            font-weight: 600; 
+            font-size: 15px;
+        }
+        .status-box.connected { background: #064e3b; color: #34d399; border: 1px solid #059669; }
+        .status-box.disconnected { background: #450a0a; color: #f87171; border: 1px solid #dc2626; }
+        .btn { 
+            display: inline-block; 
+            padding: 16px 40px; 
+            border-radius: 10px; 
+            text-decoration: none;
+            font-weight: 700; 
+            font-size: 16px; 
+            cursor: pointer; 
+            border: none; 
+            transition: all 0.2s; 
+            width: 100%;
+        }
+        .btn-primary { 
+            background: #38bdf8; 
+            color: #0f172a; 
+        }
+        .btn-primary:hover { 
+            background: #7dd3fc; 
+            transform: translateY(-2px); 
+            box-shadow: 0 8px 25px rgba(56,189,248,0.3);
+        }
+        .btn-secondary { 
+            background: #334155; 
+            color: #e2e8f0; 
+            margin-top: 12px; 
+            font-size: 14px;
+            padding: 12px 24px;
+        }
+        .btn-secondary:hover { background: #475569; }
+        .info { 
+            margin-top: 30px; 
+            padding: 18px; 
+            background: #0f172a; 
+            border-radius: 10px; 
+            font-size: 13px; 
+            color: #64748b; 
+            text-align: left; 
+            line-height: 1.6;
+        }
+        .info strong { color: #94a3b8; }
+        .info code { 
+            color: #38bdf8; 
+            background: #1e293b; 
+            padding: 2px 6px; 
+            border-radius: 4px; 
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .spinner {
+            width: 24px;
+            height: 24px;
+            border: 3px solid #334155;
+            border-top-color: #38bdf8;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+            display: none;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="logo">🔐</div>
+        <h1>Connect Gmail</h1>
+        <p class="subtitle">Allow Raj to send emails from info@robopirate.in</p>
+
+        <div class="spinner" id="spinner"></div>
+
+        <div id="status-box" class="status-box disconnected">
+            Checking Gmail status...
+        </div>
+
+        <div id="action-area">
+            <button class="btn btn-primary" id="connect-btn" onclick="connectGmail()">
+                Connect Gmail Account
+            </button>
+        </div>
+
+        <a href="/" class="btn btn-secondary">← Back to Dashboard</a>
+
+        <div class="info">
+            <strong>How it works:</strong><br>
+            1. Click the button above<br>
+            2. Sign in with Google (info@robopirate.in)<br>
+            3. Grant permission to send emails<br>
+            4. Raj will handle the rest automatically<br><br>
+            <strong>Redirect URI:</strong> <code>https://raj-web-app.onrender.com/oauth2callback</code>
+        </div>
+    </div>
+
+    <script>
+        async function checkStatus() {
+            try {
+                const res = await fetch('/api/gmail/status');
+                const data = await res.json();
+                const box = document.getElementById('status-box');
+                const btn = document.getElementById('connect-btn');
+
+                if (data.connected) {
+                    box.className = 'status-box connected';
+                    box.textContent = '✅ Gmail Connected & Ready';
+                    btn.textContent = 'Gmail Already Connected';
+                    btn.disabled = true;
+                    btn.style.opacity = '0.6';
+                    btn.style.cursor = 'default';
+                } else {
+                    box.className = 'status-box disconnected';
+                    box.textContent = '❌ Gmail Not Connected';
+                }
+            } catch(e) {
+                console.error('Status check failed:', e);
+                document.getElementById('status-box').className = 'status-box disconnected';
+                document.getElementById('status-box').textContent = '⚠️ Could not check status';
+            }
+        }
+
+        async function connectGmail() {
+            const spinner = document.getElementById('spinner');
+            const btn = document.getElementById('connect-btn');
+
+            spinner.style.display = 'block';
+            btn.disabled = true;
+            btn.textContent = 'Loading...';
+
+            try {
+                const res = await fetch('/api/gmail/auth-url');
+                const data = await res.json();
+
+                if (data.auth_url) {
+                    window.location.href = data.auth_url;
+                } else {
+                    alert('Error: ' + (data.error || 'Could not get auth URL'));
+                    spinner.style.display = 'none';
+                    btn.disabled = false;
+                    btn.textContent = 'Connect Gmail Account';
+                }
+            } catch(e) {
+                alert('Failed to get auth URL. Check console.');
+                console.error(e);
+                spinner.style.display = 'none';
+                btn.disabled = false;
+                btn.textContent = 'Connect Gmail Account';
+            }
+        }
+
+        // Check status on page load
+        checkStatus();
+    </script>
+</body>
+</html>
+"""
+
 @app.route('/connect-gmail')
 def connect_gmail_page():
-    """Simple HTML page to connect Gmail without needing frontend changes."""
-    return """
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Connect Gmail - Raj</title>
-        <style>
-            body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; 
-                   display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-            .card { background: #1e293b; border-radius: 16px; padding: 40px; max-width: 500px; 
-                    width: 90%; box-shadow: 0 20px 60px rgba(0,0,0,0.4); text-align: center; }
-            h1 { color: #38bdf8; margin-bottom: 10px; font-size: 28px; }
-            .subtitle { color: #94a3b8; margin-bottom: 30px; }
-            .status { padding: 12px 20px; border-radius: 8px; margin-bottom: 20px; font-weight: 500; }
-            .status.connected { background: #064e3b; color: #34d399; }
-            .status.disconnected { background: #450a0a; color: #f87171; }
-            .btn { display: inline-block; padding: 14px 32px; border-radius: 8px; text-decoration: none;
-                   font-weight: 600; font-size: 16px; cursor: pointer; border: none; transition: all 0.2s; }
-            .btn-primary { background: #38bdf8; color: #0f172a; }
-            .btn-primary:hover { background: #7dd3fc; transform: translateY(-2px); }
-            .btn-secondary { background: #334155; color: #e2e8f0; margin-top: 15px; }
-            .btn-secondary:hover { background: #475569; }
-            .info { margin-top: 25px; padding: 15px; background: #0f172a; border-radius: 8px; 
-                    font-size: 13px; color: #64748b; text-align: left; }
-            .info code { color: #38bdf8; background: #1e293b; padding: 2px 6px; border-radius: 4px; }
-            .spinner { display: none; width: 20px; height: 20px; border: 3px solid #334155; 
-                       border-top-color: #38bdf8; border-radius: 50%; animation: spin 1s linear infinite; 
-                       margin: 0 auto 15px; }
-            @keyframes spin { to { transform: rotate(360deg); } }
-        </style>
-    </head>
-    <body>
-        <div class="card">
-            <h1>🔐 Connect Gmail</h1>
-            <p class="subtitle">Allow Raj to send emails from info@robopirate.in</p>
-            <div class="spinner" id="spinner"></div>
-            <div id="status-box"></div>
-            <div id="actions">
-                <button class="btn btn-primary" id="connect-btn" onclick="connectGmail()">Connect Gmail Account</button>
-            </div>
-            <a href="/" class="btn btn-secondary">← Back to Dashboard</a>
-            <div class="info">
-                <strong>How it works:</strong><br>
-                1. Click the button above<br>
-                2. Sign in with Google (info@robopirate.in)<br>
-                3. Grant permission to send emails<br>
-                4. Raj will handle the rest automatically<br><br>
-                <strong>Current redirect URI:</strong> <code>https://raj-web-app.onrender.com/oauth2callback</code>
-            </div>
-        </div>
-        <script>
-            async function checkStatus() {
-                try {
-                    const res = await fetch('/api/gmail/status');
-                    const data = await res.json();
-                    const box = document.getElementById('status-box');
-                    const actions = document.getElementById('actions');
-                    if (data.connected) {
-                        box.innerHTML = '<div class="status connected">✅ Gmail Connected & Ready</div>';
-                        actions.innerHTML = '<p style="color:#34d399;font-weight:600;">Raj can now send emails!</p>';
-                    } else {
-                        box.innerHTML = '<div class="status disconnected">❌ Gmail Not Connected</div>';
-                    }
-                } catch(e) { console.error(e); }
-            }
-            async function connectGmail() {
-                document.getElementById('spinner').style.display = 'block';
-                document.getElementById('connect-btn').disabled = true;
-                try {
-                    const res = await fetch('/api/gmail/auth-url');
-                    const data = await res.json();
-                    if (data.auth_url) {
-                        window.location.href = data.auth_url;
-                    } else {
-                        alert('Error: ' + (data.error || 'Could not get auth URL'));
-                    }
-                } catch(e) {
-                    alert('Failed to get auth URL. Check console.');
-                    console.error(e);
-                }
-            }
-            checkStatus();
-        </script>
-    </body>
-    </html>
-    """
+    return CONNECT_HTML
 
 @app.route('/oauth2callback')
 def oauth2callback():
-    """Handle Gmail OAuth callback from Google."""
     try:
         db = get_db()
         from gmail_web import GmailWebClient
@@ -216,7 +315,6 @@ def oauth2callback():
 
 @app.route('/api/gmail/auth-url')
 def api_gmail_auth_url():
-    """Get Google OAuth authorization URL."""
     try:
         db = get_db()
         from gmail_web import GmailWebClient
@@ -228,10 +326,13 @@ def api_gmail_auth_url():
 
 @app.route('/api/gmail/status')
 def api_gmail_status():
-    """Check if Gmail is connected."""
     try:
         eng = get_engine()
-        has_gmail = eng.gmail is not None and hasattr(eng.gmail, 'is_authenticated') and eng.gmail.is_authenticated()
+        has_gmail = False
+        try:
+            has_gmail = eng.gmail is not None and hasattr(eng.gmail, 'is_authenticated') and eng.gmail.is_authenticated()
+        except:
+            pass
         return jsonify({
             "success": True,
             "connected": has_gmail,
@@ -656,7 +757,6 @@ def api_settings_save():
 # ═══════════════════════════════════════════════
 @app.route('/api/migrate-csv', methods=['GET', 'POST'])
 def api_migrate_csv():
-    """Force re-import all CSV files into database."""
     try:
         import sys
         import os
