@@ -113,7 +113,7 @@ def api_dashboard():
         active = []
         for b in db.batch_get_all():
             if b.get('status') != 'completed':
-                b['recipient_count'] = db.batch_count_recipients(b['id'])
+                b['recipients'] = db.batch_count_recipients(b['id'])
                 active.append(b)
 
         return jsonify({"success": True, "summary": summary, "active_batches": active[:5]})
