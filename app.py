@@ -1,11 +1,12 @@
 """
 Raj Web App - RoboPirate Email Automation
-v5.9.9 - Fast batch counts with pre-calculation
+v5.9.10 - Pipeline cards + duplicate cleanup + fast counts
 """
 import os
 import sys
 import json
 import time
+import re
 from datetime import datetime
 from pathlib import Path
 from flask import Flask, jsonify, request, redirect, send_from_directory, render_template_string
@@ -22,18 +23,14 @@ db = Database()
 from engine import CampaignEngine
 engine = CampaignEngine(db=db)
 
-# ── Pre-calculate batch counts (one-time at startup) ─────────────────
+# ── Pre-calculate batch counts at startup ────────────────────────────
 _batch_counts = {}
 
 def _refresh_batch_counts():
     global _batch_counts
     try:
         cur = db.conn.cursor()
-        cur.execute("""
-            SELECT batch_id, COUNT(*) 
-            FROM batch_recipients 
-            GROUP BY batch_id
-        """)
+        cur.execute("SELECT batch_id, COUNT(*) FROM batch_recipients GROUP BY batch_id")
         _batch_counts = {row[0]: row[1] for row in cur.fetchall()}
         cur.close()
     except Exception as e:
@@ -56,7 +53,7 @@ def index():
 # ── Health ────────────────────────────────────────────────────────────
 @app.route('/health')
 def health_check():
-    return jsonify({"status": "ok", "version": "5.9.9", "timestamp": datetime.now().isoformat()})
+    return jsonify({"status": "ok", "version": "5.9.10", "timestamp": datetime.now().isoformat()})
 
 # ═══════════════════════════════════════════════════════════════════════
 # GMAIL OAUTH
@@ -122,10 +119,57 @@ def api_gmail_status():
         return jsonify({"success": True, "connected": False, "mode": "none"})
 
 # ═══════════════════════════════════════════════════════════════════════
-# DASHBOARD - WITH CACHING
+# DASHBOARD - WITH PIPELINE CARDS
 # ═══════════════════════════════════════════════════════════════════════
 _dashboard_cache = None
 _dashboard_cache_time = 0
+
+def _get_pipeline_for_batch(batch_id, batch_name, sequence_id):
+    """Get the full D1-D10 pipeline for a batch family."""
+    try:
+        # Find the root batch (parent_batch_id is None or same as id)
+        cur = db.conn.cursor()
+
+        # Get all batches in this family (same base name, different days)
+        base_name = re.sub(r'[-_]D\d+$', '', batch_name, flags=re.I).strip()
+        if not base_name:
+            base_name = sequence_id.upper()
+
+        # Find all related batches
+        cur.execute("""
+            SELECT id, name, day_offset, status, parent_batch_id, scheduled_at
+            FROM batches 
+            WHERE name LIKE %s OR name = %s OR id = %s OR parent_batch_id = %s
+            ORDER BY day_offset
+        """, (f"{base_name}%", batch_name, batch_id, batch_id))
+
+        family_batches = []
+        for row in cur.fetchall():
+            family_batches.append({
+                'id': row[0], 'name': row[1], 'day': row[2], 
+                'status': row[3], 'parent_id': row[4], 'scheduled': row[5]
+            })
+
+        # Build pipeline days 1,3,5,7,10
+        pipeline = {}
+        for day in [1, 3, 5, 7, 10]:
+            day_batch = next((b for b in family_batches if b['day'] == day), None)
+            if day_batch:
+                count = _batch_counts.get(day_batch['id'], 0)
+                pipeline[day] = {
+                    'status': day_batch['status'],
+                    'batch_id': day_batch['id'],
+                    'recipients': count,
+                    'scheduled': day_batch['scheduled'].isoformat() if day_batch['scheduled'] else None
+                }
+            else:
+                pipeline[day] = {'status': 'missing', 'batch_id': None, 'recipients': 0}
+
+        cur.close()
+        return pipeline
+    except Exception as e:
+        print(f"[ERROR] Pipeline: {e}")
+        return {}
 
 @app.route('/api/dashboard')
 def api_dashboard():
@@ -136,16 +180,58 @@ def api_dashboard():
             return jsonify(_dashboard_cache)
 
         summary = db.get_dashboard_summary()
+
+        # Get all batches grouped into families for pipeline cards
+        all_batches = db.batch_get_all()
+
+        # Group by family (base name)
+        families = {}
+        for b in all_batches:
+            base_name = re.sub(r'[-_]D\d+$', '', b.get('name', ''), flags=re.I).strip()
+            if not base_name:
+                base_name = b.get('sequence_id', 'school').upper()
+
+            if base_name not in families:
+                families[base_name] = []
+            families[base_name].append(b)
+
+        # Build pipeline cards for each family
+        pipeline_cards = []
+        for family_name, batches in families.items():
+            # Get the root batch (lowest day, or first created)
+            root = min(batches, key=lambda x: (x.get('day_offset', 99), x.get('id', 0)))
+            root_id = root.get('id')
+
+            pipeline = _get_pipeline_for_batch(root_id, root.get('name', ''), root.get('sequence_id', 'school'))
+
+            # Only show families with at least one active/non-completed batch
+            has_active = any(b.get('status') != 'completed' for b in batches)
+            total_recipients = sum(_batch_counts.get(b.get('id'), 0) for b in batches)
+
+            if has_active or total_recipients > 0:
+                pipeline_cards.append({
+                    'family_name': family_name,
+                    'root_batch_id': root_id,
+                    'sequence_id': root.get('sequence_id', 'school'),
+                    'total_recipients': total_recipients,
+                    'pipeline': pipeline
+                })
+
+        # Active batches list (for backward compatibility)
         active = []
-        for b in db.batch_get_all():
+        for b in all_batches:
             if b.get('status') != 'completed':
                 count = _batch_counts.get(b['id'], 0)
                 b['recipients'] = count
                 b['recipient_count'] = count
-                b['total_recipients'] = count
                 active.append(b)
 
-        result = {"success": True, "summary": summary, "active_batches": active[:5]}
+        result = {
+            "success": True, 
+            "summary": summary, 
+            "active_batches": active[:5],
+            "pipeline_cards": pipeline_cards[:10]  # New: pipeline cards
+        }
         _dashboard_cache = result
         _dashboard_cache_time = now
         return jsonify(result)
@@ -156,13 +242,32 @@ def api_dashboard():
         return jsonify({"success": False, "error": str(e)}), 500
 
 # ═══════════════════════════════════════════════════════════════════════
-# BATCHES - FAST WITH PRE-CALCULATED COUNTS
+# BATCHES - WITH DUPLICATE CLEANUP
 # ═══════════════════════════════════════════════════════════════════════
 @app.route('/api/batches')
 def api_batches():
     try:
         batches = db.batch_get_all()
+        # Filter out duplicates (batches with 0 recipients that have a twin with recipients)
+        seen_names = {}
+        filtered = []
+
         for b in batches:
+            name = b.get('name', '')
+            count = _batch_counts.get(b['id'], 0)
+
+            # If we've seen this name before and this one has 0 recipients, skip it
+            if name in seen_names:
+                if count == 0:
+                    continue  # Skip duplicate with 0
+                else:
+                    # This one has recipients, replace the previous
+                    seen_names[name] = b
+            else:
+                seen_names[name] = b
+
+        # Build final list from seen_names
+        for b in seen_names.values():
             count = _batch_counts.get(b['id'], 0)
             b['recipients'] = count
             b['recipient_count'] = count
@@ -171,7 +276,9 @@ def api_batches():
             for key in ['created_at', 'scheduled_at', 'started_at', 'completed_at']:
                 if b.get(key) and hasattr(b[key], 'isoformat'):
                     b[key] = b[key].isoformat()
-        return jsonify({"success": True, "batches": batches})
+            filtered.append(b)
+
+        return jsonify({"success": True, "batches": filtered})
     except Exception as e:
         import traceback
         print(f"[ERROR] Batches: {e}")
