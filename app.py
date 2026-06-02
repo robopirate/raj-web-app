@@ -1,89 +1,80 @@
 """
-app.py -- Raj Web App - Flask Backend v3.3
-Fixed: Engine gets its own DB connection, auto-reconnect support
+app.py -- Raj Web App v5.6
+Fixed: Singleton engine, lazy init, thread-safe DB, proper Gmail check
 """
 
 import os
 import re
+import sys
 import json
-import sqlite3
-from datetime import datetime
+import time
+import threading
 from pathlib import Path
-from flask import Flask, request, jsonify, send_from_directory, session, g
+from datetime import datetime
+from flask import Flask, request, jsonify, send_from_directory, g
 from flask_cors import CORS
 
-# ─── Flask Setup ───
+# ─── Flask App ───
 app = Flask(__name__, static_folder='dist', static_url_path='')
-app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'raj-web-secret-2026-robopirate')
-CORS(app, supports_credentials=True)
+CORS(app)
 
 API_DIR = Path(__file__).parent
 
-# ─── Globals ───
+# ─── Global State ───
 engine = None
 brain = None
+_db_instance = None
+_db_lock = threading.Lock()
 
-# ─── Thread-safe DB access ───
+# ─── Database Singleton (per thread safety) ───
 def get_db():
-    """Get thread-local database connection."""
-    if not hasattr(g, 'db'):
-        from db import Database
-        g.db = Database()
-    return g.db
+    global _db_instance
+    if _db_instance is None:
+        with _db_lock:
+            if _db_instance is None:
+                from db import Database
+                _db_instance = Database()
+    return _db_instance
 
-@app.teardown_appcontext
-def close_db(error):
-    """Close database connection at end of request."""
-    if hasattr(g, 'db'):
+# ─── Lazy Engine Init ───
+def get_engine():
+    global engine
+    if engine is None:
+        db = get_db()
+        from engine import CampaignEngine
+        engine = CampaignEngine(db)
+        # Try to auto-connect Gmail if token exists
         try:
-            g.db.conn.close()
-        except:
-            pass
+            from gmail_web import GmailWebClient
+            gmail = GmailWebClient(db)
+            if gmail.is_authenticated():
+                engine.gmail = gmail
+                print("[App] Gmail auto-connected from stored token")
+        except Exception as e:
+            print(f"[App] Gmail auto-connect failed: {e}")
+        # Start engine loop
+        engine.start()
+    return engine
 
-# ─── Init ───
-def init_services():
-    global engine, brain
-
-    print("[INIT] Starting Raj Web App v3.3...")
-
-    # Engine gets its own DB connection (separate from web requests)
-    from engine import CampaignEngine
-    from db import Database
-
-    engine_db = Database()
-
-    # Gmail (optional - web OAuth)
-    gmail = None
-    try:
-        from gmail_web import GmailWebClient
-        gmail = GmailWebClient(engine_db)
-        # Check if token exists
-        token_path = Path(__file__).parent / 'token.json'
-        if token_path.exists():
-            print("[INIT] Gmail Web OAuth connected")
-        else:
-            print("[INIT] Gmail Web OAuth not authenticated - connect via /api/gmail/auth-url")
-            gmail = None
-    except Exception as e:
-        print(f"[INIT] Gmail Web not available: {e}")
-        gmail = None
-
-    engine = CampaignEngine(engine_db, gmail)
-    engine.start()
-    print("[INIT] Engine started")
-
-    # Brain
-    try:
+# ─── Lazy Brain Init ───
+def get_brain():
+    global brain
+    if brain is None:
         from raj_brain import RajBrain
-        brain = RajBrain(engine_db, engine)
-        print("[INIT] Raj brain initialized")
-    except Exception as e:
-        print(f"[INIT] Brain not available: {e}")
-        brain = None
+        brain = RajBrain(get_engine())
+    return brain
 
-# ═══════════════════════════════════════════════
-# STATIC / SPA
-# ═══════════════════════════════════════════════
+# ─── Init on first request (not at import time) ───
+@app.before_request
+def before_request():
+    g.db = get_db()
+    # Lazy init engine on first request
+    if engine is None:
+        get_engine()
+    if brain is None:
+        get_brain()
+
+# ─── SPA Routes ───
 @app.route('/')
 def serve_index():
     return send_from_directory(app.static_folder, 'index.html')
@@ -95,10 +86,10 @@ def serve_static(path):
         return send_from_directory(app.static_folder, path)
     return send_from_directory(app.static_folder, 'index.html')
 
-# ─── Health Check (for Render) ───
+# ─── Health Check ───
 @app.route('/health')
 def health_check():
-    return jsonify({"status": "ok", "version": "3.3", "timestamp": datetime.now().isoformat()})
+    return jsonify({"status": "ok", "version": "5.6", "timestamp": datetime.now().isoformat()})
 
 # ═══════════════════════════════════════════════
 # GMAIL WEB OAUTH
@@ -112,22 +103,24 @@ def oauth2callback():
         client = GmailWebClient(db)
         result = client.handle_callback(request.args.get('code'))
         if result.get('success'):
-            global engine
-            engine = CampaignEngine(db, client)
-            engine.start()
+            eng = get_engine()
+            eng.gmail = client
             return """
-            <html><body style="font-family:Arial;text-align:center;padding:50px">
-            <h1 style="color:#22c55e">✅ Gmail Connected!</h1>
+            <html><head><meta charset="utf-8"><title>Gmail Connected</title>
+            <style>body{font-family:sans-serif;text-align:center;padding:50px;background:#1a1a2e;color:#fff;}
+            .success{color:#4ade80;font-size:24px;}a{color:#60a5fa;}</style></head>
+            <body><div class="success">✅ Gmail Connected!</div>
             <p>Raj can now send emails from the cloud.</p>
-            <a href="/" style="display:inline-block;margin-top:20px;padding:12px 24px;background:#3b82f6;color:white;text-decoration:none;border-radius:6px">Go to Dashboard</a>
-            </body></html>
+            <p><a href="/">Go to Dashboard</a></p></body></html>
             """
         else:
             return f"""
-            <html><body style="font-family:Arial;text-align:center;padding:50px">
-            <h1 style="color:#ef4444">❌ Connection Failed</h1>
+            <html><head><meta charset="utf-8"><title>Connection Failed</title>
+            <style>body{font-family:sans-serif;text-align:center;padding:50px;background:#1a1a2e;color:#fff;}
+            .error{color:#f87171;font-size:24px;}</style></head>
+            <body><div class="error">❌ Connection Failed</div>
             <p>{result.get('error', 'Unknown error')}</p>
-            </body></html>
+            <p><a href="/">Back to Dashboard</a></p></body></html>
             """, 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -148,7 +141,8 @@ def api_gmail_auth_url():
 def api_gmail_status():
     """Check if Gmail is connected."""
     try:
-        has_gmail = engine and hasattr(engine, 'gmail') and engine.gmail is not None
+        eng = get_engine()
+        has_gmail = eng.gmail is not None and hasattr(eng.gmail, 'is_authenticated') and eng.gmail.is_authenticated()
         return jsonify({
             "success": True,
             "connected": has_gmail,
@@ -165,7 +159,8 @@ def api_gmail_status():
 def api_dashboard():
     try:
         db = get_db()
-        summary = engine.get_summary() if engine else {"sequences": {}, "global": {}}
+        eng = get_engine()
+        summary = eng.get_summary() if eng else {"sequences": {}, "global": {}}
         families = _get_batch_families(db)
         return jsonify({"success": True, "summary": summary, "families": families})
     except Exception as e:
@@ -186,7 +181,7 @@ def _get_batch_families(db):
     for b in batches:
         name = b.get("name", "")
         family_name = re.sub(r'[-_]D\d+$', '', name, flags=re.I)
-        family_name = re.sub(r'(?i)(-day\s*\d+|\s*day\s*\d+|\s*d\d+)$', '', family_name).strip()
+        family_name = re.sub(r'(?i)(-day\s*\d+|\s*day\s*\d+|\s*D\d+)$', '', family_name).strip()
 
         if family_name not in families_dict:
             families_dict[family_name] = {
@@ -226,7 +221,7 @@ def api_batches():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/batches/<int:batch_id>')
+@app.route('/api/batches/<batch_id>')
 def api_batch_get(batch_id):
     try:
         db = get_db()
@@ -239,7 +234,7 @@ def api_batch_get(batch_id):
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/batches/<int:batch_id>/run', methods=['POST'])
+@app.route('/api/batches/<batch_id>/run', methods=['POST'])
 def api_batch_run(batch_id):
     try:
         db = get_db()
@@ -248,7 +243,7 @@ def api_batch_run(batch_id):
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/batches/<int:batch_id>/pause', methods=['POST'])
+@app.route('/api/batches/<batch_id>/pause', methods=['POST'])
 def api_batch_pause(batch_id):
     try:
         db = get_db()
@@ -257,7 +252,7 @@ def api_batch_pause(batch_id):
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/batches/<int:batch_id>', methods=['DELETE'])
+@app.route('/api/batches/<batch_id>', methods=['DELETE'])
 def api_batch_delete(batch_id):
     try:
         db = get_db()
@@ -266,7 +261,7 @@ def api_batch_delete(batch_id):
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/batches/<int:batch_id>/recipients')
+@app.route('/api/batches/<batch_id>/recipients')
 def api_batch_recipients(batch_id):
     try:
         db = get_db()
@@ -285,10 +280,11 @@ def api_batch_from_pool():
         batch_size = int(data.get('batch_size', 50))
         day_offset = int(data.get('day_offset', 1))
 
-        if not engine or not hasattr(engine, 'create_batch_from_pool'):
+        eng = get_engine()
+        if not eng or not hasattr(eng, 'create_batch_from_pool'):
             return jsonify({"success": False, "error": "Engine not ready"}), 500
 
-        result = engine.create_batch_from_pool(name, sequence_id, batch_size, day_offset)
+        result = eng.create_batch_from_pool(name, sequence_id, batch_size, day_offset)
         return jsonify(result)
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -300,7 +296,8 @@ def api_batch_from_pool():
 def api_pool(sequence_id):
     try:
         db = get_db()
-        count = engine.get_pool_count(sequence_id) if engine else 0
+        eng = get_engine()
+        count = eng.get_pool_count(sequence_id) if eng else 0
         total = db.recipient_count(sequence_id) if db else 0
         return jsonify({"success": True, "unbatched": count, "total": total})
     except Exception as e:
@@ -314,9 +311,10 @@ def api_chat():
     try:
         data = request.json or {}
         message = data.get('message', '')
-        if not brain:
+        br = get_brain()
+        if not br:
             return jsonify({"response": "Raj is initializing... Please wait a moment."})
-        result = brain.process(message)
+        result = br.process(message)
         return jsonify({
             "response": result.get("response", "I processed your request, sir."),
             "action": result.get("action"),
@@ -364,9 +362,10 @@ def api_template_get(seq_id, day):
 @app.route('/api/templates/sync', methods=['POST'])
 def api_templates_sync():
     try:
-        if not engine or not hasattr(engine, 'sync_templates'):
+        eng = get_engine()
+        if not eng or not hasattr(eng, 'sync_templates'):
             return jsonify({"success": False, "error": "Gmail not connected"})
-        result = engine.sync_templates()
+        result = eng.sync_templates()
         return jsonify({"success": True, **result})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -398,8 +397,9 @@ def api_import():
         filepath = upload_dir / file.filename
         file.save(str(filepath))
 
-        if engine and hasattr(engine, 'smart_import'):
-            result = engine.smart_import(str(filepath), sequence_id)
+        eng = get_engine()
+        if eng and hasattr(eng, 'smart_import'):
+            result = eng.smart_import(str(filepath), sequence_id)
             return jsonify(result)
         else:
             return jsonify({"success": False, "error": "Engine not ready"})
@@ -461,7 +461,7 @@ def api_replies():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/replies/<int:reply_id>/handled', methods=['POST'])
+@app.route('/api/replies/<reply_id>/handled', methods=['POST'])
 def api_reply_handled(reply_id):
     try:
         db = get_db()
@@ -475,9 +475,10 @@ def api_reply_handled(reply_id):
 @app.route('/api/scan-replies', methods=['POST'])
 def api_scan_replies():
     try:
-        if not engine or not hasattr(engine, 'scan_replies'):
+        eng = get_engine()
+        if not eng or not hasattr(eng, 'scan_replies'):
             return jsonify({"success": False, "error": "Engine not ready"})
-        count = engine.scan_replies()
+        count = eng.scan_replies()
         return jsonify({"success": True, "count": count})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -488,9 +489,10 @@ def api_scan_replies():
 @app.route('/api/scan-bounces', methods=['POST'])
 def api_scan_bounces():
     try:
-        if not engine or not hasattr(engine, 'scan_bounces'):
+        eng = get_engine()
+        if not eng or not hasattr(eng, 'scan_bounces'):
             return jsonify({"success": False, "error": "Engine not ready"})
-        result = engine.scan_bounces()
+        result = eng.scan_bounces()
         return jsonify({"success": True, **(result if isinstance(result, dict) else {"count": result})})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -501,9 +503,10 @@ def api_scan_bounces():
 @app.route('/api/engine/status')
 def api_engine_status():
     try:
+        eng = get_engine()
         return jsonify({
-            "running": engine.is_running() if engine else False,
-            "paused": engine.is_paused() if engine else False,
+            "running": eng.is_running() if eng else False,
+            "paused": eng.is_paused() if eng else False,
         })
     except:
         return jsonify({"running": False, "paused": False})
@@ -511,16 +514,17 @@ def api_engine_status():
 @app.route('/api/engine/<action>', methods=['POST'])
 def api_engine_action(action):
     try:
-        if not engine:
+        eng = get_engine()
+        if not eng:
             return jsonify({"success": False, "error": "Engine not initialized"}), 500
-        if action == 'start' and hasattr(engine, 'start'):
-            engine.start()
-        elif action == 'stop' and hasattr(engine, 'stop'):
-            engine.stop()
-        elif action == 'pause' and hasattr(engine, 'pause'):
-            engine.pause()
-        elif action == 'resume' and hasattr(engine, 'resume'):
-            engine.resume()
+        if action == 'start' and hasattr(eng, 'start'):
+            eng.start()
+        elif action == 'stop' and hasattr(eng, 'stop'):
+            eng.stop()
+        elif action == 'pause' and hasattr(eng, 'pause'):
+            eng.pause()
+        elif action == 'resume' and hasattr(eng, 'resume'):
+            eng.resume()
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -541,12 +545,13 @@ def api_settings():
             "auto_advance": (db.get_meta("auto_advance") or "true") != "false" if db else True,
             "sunday_filter": (db.get_meta("sunday_filter") or "true") != "false" if db else True,
         }
+        eng = get_engine()
         return jsonify({
             "success": True,
             "settings": settings,
             "engine": {
-                "running": engine.is_running() if engine else False,
-                "paused": engine.is_paused() if engine else False,
+                "running": eng.is_running() if eng else False,
+                "paused": eng.is_paused() if eng else False,
             }
         })
     except Exception as e:
@@ -576,7 +581,7 @@ def api_migrate_csv():
     """Force re-import all CSV files into database."""
     try:
         from seed_db import seed_database
-        seed_database()
+        seed_database(force=True)
         return jsonify({"success": True, "message": "CSV data re-imported"})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -585,8 +590,5 @@ def api_migrate_csv():
 # INIT
 # ═══════════════════════════════════════════════
 if __name__ == '__main__':
-    init_services()
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
-else:
-    init_services()

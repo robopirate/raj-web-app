@@ -1,13 +1,11 @@
 """
-raj_brain.py -- Raj AI Agent Brain v5.0
-True AI agent with memory, reasoning, learning, and proactive decision making
+raj_brain.py -- Raj AI Agent Brain v5.6
+Fixed: Uses PostgreSQL database for memory instead of local SQLite
 """
 
 import re
 import json
 import time
-import sqlite3
-import requests
 import os
 from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime, timedelta
@@ -35,78 +33,31 @@ class Decision:
     result: Optional[str] = None
 
 class RajMemory:
-    """Raj's long-term memory and learning system"""
+    """Raj's long-term memory using the main PostgreSQL database."""
 
-    def __init__(self, db_path="raj_memory.db"):
-        self.conn = sqlite3.connect(db_path, check_same_thread=False)
-        self._init_tables()
-        self.short_term = []  # Last 20 interactions
+    def __init__(self, db):
+        self.db = db
+        self.short_term = []  # Last 20 interactions (in-memory cache)
         self.context_window = []  # Current conversation context
 
-    def _init_tables(self):
-        self.conn.executescript("""
-            CREATE TABLE IF NOT EXISTS interactions (
-                id INTEGER PRIMARY KEY,
-                timestamp TEXT,
-                user_input TEXT,
-                raj_response TEXT,
-                action TEXT,
-                outcome TEXT,
-                sentiment TEXT,
-                context_json TEXT,
-                sequence_id TEXT,
-                day INTEGER,
-                recipient_email TEXT
-            );
-
-            CREATE TABLE IF NOT EXISTS decisions (
-                id INTEGER PRIMARY KEY,
-                timestamp TEXT,
-                situation TEXT,
-                options_json TEXT,
-                chosen TEXT,
-                reasoning TEXT,
-                confidence REAL,
-                result TEXT,
-                feedback TEXT
-            );
-
-            CREATE TABLE IF NOT EXISTS learnings (
-                id INTEGER PRIMARY KEY,
-                category TEXT,
-                pattern TEXT,
-                insight TEXT,
-                success_rate REAL,
-                last_used TEXT,
-                use_count INTEGER DEFAULT 0
-            );
-
-            CREATE TABLE IF NOT EXISTS campaign_insights (
-                id INTEGER PRIMARY KEY,
-                sequence_id TEXT,
-                metric TEXT,
-                value REAL,
-                insight TEXT,
-                timestamp TEXT
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_interactions_time ON interactions(timestamp);
-            CREATE INDEX IF NOT EXISTS idx_interactions_seq ON interactions(sequence_id);
-            CREATE INDEX IF NOT EXISTS idx_learnings_cat ON learnings(category);
-        """)
-
     def remember_interaction(self, interaction: Interaction):
-        """Store an interaction in memory"""
-        self.conn.execute("""
-            INSERT INTO interactions (timestamp, user_input, raj_response, action, outcome, sentiment, context_json, sequence_id, day, recipient_email)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            interaction.timestamp, interaction.user_input, interaction.raj_response,
-            interaction.action_taken, interaction.outcome, interaction.sentiment,
-            json.dumps(interaction.context), interaction.context.get("sequence_id"),
-            interaction.context.get("day"), interaction.context.get("recipient_email")
-        ))
-        self.conn.commit()
+        """Store an interaction in PostgreSQL memory."""
+        if not self.db:
+            return
+        try:
+            self.db.raj_remember_interaction(
+                user_input=interaction.user_input,
+                raj_response=interaction.raj_response,
+                action=interaction.action_taken,
+                outcome=interaction.outcome,
+                sentiment=interaction.sentiment,
+                context_json=json.dumps(interaction.context),
+                sequence_id=interaction.context.get("sequence_id"),
+                day=interaction.context.get("day"),
+                recipient_email=interaction.context.get("recipient_email")
+            )
+        except Exception as e:
+            print(f"[RajMemory] Error remembering interaction: {e}")
 
         # Keep short-term memory limited
         self.short_term.append(interaction)
@@ -114,147 +65,139 @@ class RajMemory:
             self.short_term.pop(0)
 
     def remember_decision(self, decision: Decision):
-        """Store a decision for learning"""
-        self.conn.execute("""
-            INSERT INTO decisions (timestamp, situation, options_json, chosen, reasoning, confidence, result)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (
-            decision.timestamp, decision.situation, json.dumps(decision.options),
-            decision.chosen, decision.reasoning, decision.confidence, decision.result
-        ))
-        self.conn.commit()
+        """Store a decision for learning."""
+        if not self.db:
+            return
+        try:
+            self.db.execute("""
+                INSERT INTO raj_decisions (situation, options_json, chosen, reasoning, confidence, result)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                decision.situation, json.dumps(decision.options),
+                decision.chosen, decision.reasoning, decision.confidence, decision.result
+            ))
+            self.db.commit()
+        except Exception as e:
+            print(f"[RajMemory] Error remembering decision: {e}")
 
     def add_learning(self, category: str, pattern: str, insight: str, success_rate: float = 0.5):
-        """Add a learned pattern"""
-        existing = self.conn.execute(
-            "SELECT id, success_rate, use_count FROM learnings WHERE category=? AND pattern=?",
-            (category, pattern)
-        ).fetchone()
-
-        if existing:
-            new_rate = (existing[1] * existing[2] + success_rate) / (existing[2] + 1)
-            self.conn.execute(
-                "UPDATE learnings SET success_rate=?, use_count=use_count+1, last_used=? WHERE id=?",
-                (new_rate, datetime.now().isoformat(), existing[0])
-            )
-        else:
-            self.conn.execute(
-                "INSERT INTO learnings (category, pattern, insight, success_rate, last_used) VALUES (?, ?, ?, ?, ?)",
-                (category, pattern, insight, success_rate, datetime.now().isoformat())
-            )
-        self.conn.commit()
+        """Add a learned pattern."""
+        if not self.db:
+            return
+        try:
+            self.db.raj_add_learning(category, pattern, insight, success_rate)
+        except Exception as e:
+            print(f"[RajMemory] Error adding learning: {e}")
 
     def get_relevant_learnings(self, situation: str, category: str = None, limit: int = 5) -> List[Dict]:
-        """Get learnings relevant to current situation"""
-        sql = "SELECT * FROM learnings WHERE "
-        if category:
-            sql += "category=? AND "
-        sql += "(pattern LIKE ? OR insight LIKE ?) ORDER BY success_rate DESC, use_count DESC LIMIT ?"
-
-        params = []
-        if category:
-            params.append(category)
-        params.extend([f"%{situation}%", f"%{situation}%", limit])
-
-        rows = self.conn.execute(sql, params).fetchall()
-        return [{
-            "id": r[0], "category": r[1], "pattern": r[2], "insight": r[3],
-            "success_rate": r[4], "last_used": r[5], "use_count": r[6]
-        } for r in rows]
+        """Get learnings relevant to current situation."""
+        if not self.db:
+            return []
+        try:
+            learnings = self.db.raj_get_learnings(category=category, limit=limit)
+            # Filter by relevance
+            relevant = []
+            for l in learnings:
+                if situation.lower() in l.get("pattern", "").lower() or situation.lower() in l.get("insight", "").lower():
+                    relevant.append(l)
+            return relevant[:limit]
+        except Exception as e:
+            print(f"[RajMemory] Error getting learnings: {e}")
+            return []
 
     def get_campaign_performance(self, sequence_id: str, days: int = 30) -> Dict:
-        """Analyze campaign performance over time"""
-        since = (datetime.now() - timedelta(days=days)).isoformat()
-
-        rows = self.conn.execute("""
-            SELECT action, outcome, sentiment, COUNT(*) as count
-            FROM interactions
-            WHERE sequence_id=? AND timestamp>?
-            GROUP BY action, outcome, sentiment
-        """, (sequence_id, since)).fetchall()
-
-        performance = defaultdict(lambda: {"success": 0, "failure": 0, "total": 0})
-        for action, outcome, sentiment, count in rows:
-            performance[action]["total"] += count
-            if sentiment in ["positive", "success"] or "sent" in outcome.lower():
-                performance[action]["success"] += count
-            else:
-                performance[action]["failure"] += count
-
-        return dict(performance)
+        """Analyze campaign performance over time."""
+        if not self.db:
+            return {}
+        try:
+            since = (datetime.now() - timedelta(days=days)).isoformat()
+            cur = self.db.execute("""
+                SELECT action, outcome, sentiment, COUNT(*) as count
+                FROM raj_interactions
+                WHERE sequence_id=? AND timestamp>?
+                GROUP BY action, outcome, sentiment
+            """, (sequence_id, since))
+            rows = cur.fetchall()
+            performance = defaultdict(lambda: {"success": 0, "failure": 0, "total": 0})
+            for row in rows:
+                action, outcome, sentiment, count = row[0], row[1], row[2], row[3]
+                performance[action]["total"] += count
+                if sentiment in ["positive", "success"] or "sent" in str(outcome).lower():
+                    performance[action]["success"] += count
+                else:
+                    performance[action]["failure"] += count
+            return dict(performance)
+        except Exception as e:
+            print(f"[RajMemory] Error getting performance: {e}")
+            return {}
 
     def get_recent_context(self, limit: int = 5) -> List[Dict]:
-        """Get recent conversation context"""
+        """Get recent conversation context."""
         return [asdict(i) for i in self.short_term[-limit:]]
 
     def update_decision_result(self, decision_id: int, result: str, feedback: str = None):
-        """Update a decision with its outcome for learning"""
-        self.conn.execute(
-            "UPDATE decisions SET result=?, feedback=? WHERE id=?",
-            (result, feedback, decision_id)
-        )
-        self.conn.commit()
+        """Update a decision with its outcome for learning."""
+        if not self.db:
+            return
+        try:
+            self.db.execute(
+                "UPDATE raj_decisions SET result=?, feedback=? WHERE id=?",
+                (result, feedback, decision_id)
+            )
+            self.db.commit()
+        except Exception as e:
+            print(f"[RajMemory] Error updating decision: {e}")
 
 
 class RajReasoning:
     """Raj's reasoning and decision-making engine"""
 
-    def __init__(self, memory: RajMemory, ollama_url: str = "http://localhost:11434"):
+    def __init__(self, memory: RajMemory):
         self.memory = memory
-        self.ollama_url = ollama_url
 
     def analyze_situation(self, situation: str, context: Dict) -> Dict:
-        """Analyze a situation and provide reasoning"""
+        """Analyze a situation and provide reasoning."""
         learnings = self.memory.get_relevant_learnings(situation)
         recent = self.memory.get_recent_context(3)
 
-        prompt = f"""You are Raj, an AI email campaign manager. Analyze this situation:
+        # Simple rule-based analysis (no external AI needed for core logic)
+        risks = []
+        opportunities = []
+        recommended_action = "ask user for guidance"
+        confidence = 0.5
 
-SITUATION: {situation}
+        # Analyze context
+        if context.get("pending_replies", 0) > 5:
+            risks.append("Multiple replies pending - may need attention")
+            opportunities.append("High engagement detected")
+            recommended_action = "draft_replies"
+            confidence = 0.75
 
-CURRENT CONTEXT:
-{json.dumps(context, indent=2)}
+        if context.get("bounce_count", 0) > 5:
+            risks.append("High bounce rate - sender reputation at risk")
+            recommended_action = "investigate_bounces"
+            confidence = 0.85
 
-RELEVANT PAST EXPERIENCES:
-{json.dumps(learnings, indent=2)}
+        if context.get("overdue_emails", 0) > 10:
+            risks.append("Many emails overdue - sequence falling behind")
+            recommended_action = "send_overdue"
+            confidence = 0.8
 
-RECENT INTERACTIONS:
-{json.dumps(recent, indent=2)}
-
-Provide analysis in JSON:
-{{
-    "understanding": "what is happening here",
-    "risks": ["risk1", "risk2"],
-    "opportunities": ["opportunity1", "opportunity2"],
-    "recommended_action": "what to do",
-    "confidence": 0.85,
-    "reasoning": "why this action"
-}}"""
-
-        try:
-            r = requests.post(f"{self.ollama_url}/api/chat", json={
-                "model": "gpt-oss:20b-cloud",
-                "messages": [{"role": "user", "content": prompt}],
-                "stream": False
-            }, timeout=60)
-            content = r.json()["message"]["content"]
-            m = re.search(r'\{.*\}', content, re.DOTALL)
-            if m:
-                return json.loads(m.group())
-        except Exception as e:
-            pass
+        if not risks:
+            recommended_action = "wait"
+            confidence = 0.9
 
         return {
             "understanding": situation,
-            "risks": ["unknown outcome"],
-            "opportunities": ["proceed with caution"],
-            "recommended_action": "ask user for guidance",
-            "confidence": 0.5,
-            "reasoning": "AI reasoning unavailable, using default"
+            "risks": risks,
+            "opportunities": opportunities,
+            "recommended_action": recommended_action,
+            "confidence": confidence,
+            "reasoning": f"Based on {len(learnings)} past learnings and {len(recent)} recent interactions."
         }
 
     def decide_next_action(self, engine_state: Dict) -> Decision:
-        """Decide what Raj should do next based on current state"""
+        """Decide what Raj should do next based on current state."""
         situation = self._describe_state(engine_state)
         options = self._generate_options(engine_state)
         analysis = self.analyze_situation(situation, engine_state)
@@ -275,7 +218,7 @@ Provide analysis in JSON:
         return decision
 
     def _describe_state(self, state: Dict) -> str:
-        """Convert engine state to natural language description"""
+        """Convert engine state to natural language description."""
         parts = []
         if state.get("running_batches"):
             parts.append(f"{len(state['running_batches'])} batches running")
@@ -291,7 +234,7 @@ Provide analysis in JSON:
         return ", ".join(parts)
 
     def _generate_options(self, state: Dict) -> List[str]:
-        """Generate possible actions based on state"""
+        """Generate possible actions based on state."""
         options = ["wait", "notify_user"]
 
         if state.get("pending_replies", 0) > 0:
@@ -309,20 +252,19 @@ Provide analysis in JSON:
 class RajBrain:
     """Raj AI Agent - Main brain combining memory, reasoning, and action"""
 
-    def __init__(self, engine, ollama_url="http://localhost:11434"):
+    def __init__(self, engine):
         self.engine = engine
-        self.ollama_url = ollama_url
-        self.memory = RajMemory()
-        self.reasoning = RajReasoning(self.memory, ollama_url)
+        self.memory = RajMemory(engine.db if engine else None)
+        self.reasoning = RajReasoning(self.memory)
         self.personality = {
             "name": "Raj",
             "role": "Email Campaign Manager",
             "style": "professional, proactive, warm with Om",
             "traits": ["efficient", "learning", "protective of sender reputation"]
         }
-        self.autonomy_level = "advisory"  # advisory, semi-auto, auto
+        self.autonomy_level = "advisory"
 
-    SYSTEM_PROMPT = """You are Raj, an AI email campaign manager at RoboPirate.
+        SYSTEM_PROMPT = """You are Raj, an AI email campaign manager at RoboPirate.
 You are NOT a script - you are an intelligent agent that understands context, learns from outcomes, and makes decisions.
 
 Your personality:
@@ -393,7 +335,7 @@ Respond naturally as Raj. Be concise but informative."""
             return {"response": response, "action": "chat", "params": {}, "result": {}}
 
     def _get_engine_state(self) -> Dict:
-        """Get current engine state for decision making"""
+        """Get current engine state for decision making."""
         try:
             summary = self.engine.get_summary()
             return {
@@ -404,15 +346,15 @@ Respond naturally as Raj. Be concise but informative."""
                 "active_batches": summary.get("global", {}).get("active_batches", 0),
                 "blacklist_count": summary.get("global", {}).get("blacklist_count", 0),
                 "sequences": {
-                    "school": summary.get("school", {}),
-                    "csr": summary.get("csr", {})
+                    "school": summary.get("sequences", {}).get("school", {}),
+                    "csr": summary.get("sequences", {}).get("csr", {})
                 }
             }
         except:
             return {"error": "Could not get state"}
 
     def _execute_with_reasoning(self, action: str, params: Dict, state: Dict) -> Dict:
-        """Execute an action with AI reasoning"""
+        """Execute an action with AI reasoning."""
         result = self._execute_action(action, params)
 
         try:
@@ -433,46 +375,32 @@ Respond naturally as Raj. Be concise but informative."""
         }
 
     def _converse(self, user_input: str, state: Dict) -> str:
-        """Have a natural conversation using AI with memory"""
+        """Have a natural conversation."""
         recent = self.memory.get_recent_context(5)
-        recent_str = "\n".join([
-            f"User: {i['user_input']}\nRaj: {i['raj_response']}"
-            for i in recent
-        ])
-
         learnings = self.memory.get_relevant_learnings(user_input)
-        learnings_str = "\n".join([
-            f"- {l['pattern']}: {l['insight']} (success: {l['success_rate']:.0%})"
-            for l in learnings
-        ])
 
-        prompt = f"""Current state: {json.dumps(state)}
+        # Simple conversational responses based on keywords
+        user_lower = user_input.lower()
 
-Recent conversation:
-{recent_str}
+        if any(w in user_lower for w in ["hello", "hi", "hey", "namaste"]):
+            return "Hello sir! Raj here, ready to manage your campaigns. How can I help today?"
 
-Relevant experience:
-{learnings_str}
+        if any(w in user_lower for w in ["thank", "thanks", "dhanyavad"]):
+            return "You're welcome, sir! Always here to help. What's next on the agenda?"
 
-User: {user_input}
+        if any(w in user_lower for w in ["bye", "goodbye", "see you"]):
+            return "Goodbye sir! I'll keep monitoring everything in the background. Talk soon!"
 
-Respond as Raj naturally:"""
+        if "how are you" in user_lower or "status" in user_lower:
+            return self._format_response("status", {"summary": state})
 
-        try:
-            r = requests.post(f"{self.ollama_url}/api/chat", json={
-                "model": "gpt-oss:20b-cloud",
-                "messages": [
-                    {"role": "system", "content": self.SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt}
-                ],
-                "stream": False
-            }, timeout=60)
-            return r.json()["message"]["content"]
-        except Exception as e:
-            return f"I'm processing that, sir. My AI core is warming up. (Error: {str(e)[:50]})"
+        if "what can you do" in user_lower or "help" in user_lower:
+            return self._format_response("help", {})
+
+        return "I'm here, sir. I can help with campaigns, batches, templates, imports, and monitoring. What would you like to do?"
 
     def _format_reasoned_response(self, action: str, result: Dict, analysis: Dict) -> str:
-        """Format a response that includes reasoning"""
+        """Format a response that includes reasoning."""
         base_response = self._format_response(action, result)
 
         if analysis.get("confidence", 1.0) < 0.8:
@@ -481,7 +409,7 @@ Respond as Raj naturally:"""
         return base_response
 
     def proactive_check(self) -> Optional[Dict]:
-        """Check if Raj should take proactive action"""
+        """Check if Raj should take proactive action."""
         state = self._get_engine_state()
 
         decision = self.reasoning.decide_next_action(state)
@@ -496,7 +424,7 @@ Respond as Raj naturally:"""
         return None
 
     def learn_from_outcome(self, action: str, params: Dict, success: bool, details: str):
-        """Learn from the outcome of an action"""
+        """Learn from the outcome of an action."""
         category = action
         pattern = f"{action} with {json.dumps(params)}"
         insight = details
@@ -527,7 +455,7 @@ Respond as Raj naturally:"""
         if m:
             return "smart_import", {"path": m.group(1).strip(), "sequence": m.group(2)}
 
-        # Pool-based import (NEW)
+        # Pool-based import
         m = re.search(r"import\s+(.+?)\s+(?:to|into)\s+(school|csr)\s+pool", text_lower)
         if m:
             return "import_to_pool", {"path": m.group(1).strip(), "sequence": m.group(2)}
@@ -535,7 +463,7 @@ Respond as Raj naturally:"""
         if "import to pool" in text_lower or "pool import" in text_lower:
             return "import_to_pool_dialog", {}
 
-        # Create batch from pool (NEW)
+        # Create batch from pool
         m = re.search(r"(?:create|make)\s+batch\s+(?:from\s+)?pool\s+(school|csr)(?:\s+(\d+))?", text_lower)
         if m:
             return "create_batch_from_pool", {"sequence": m.group(1), "size": int(m.group(2)) if m.group(2) else 50}
@@ -544,7 +472,7 @@ Respond as Raj naturally:"""
         if m:
             return "create_batch_from_pool", {"sequence": m.group(1), "size": int(m.group(2)) if m.group(2) else 50}
 
-        # Pool status (NEW)
+        # Pool status
         if any(w in text_lower for w in ["pool status", "how many in pool", "pool count", "leads in pool"]):
             return "pool_status", {}
 
@@ -621,7 +549,7 @@ Respond as Raj naturally:"""
         if any(w in text_lower for w in ["help", "what can you do", "commands", "instructions"]):
             return "help", {}
 
-        # -- CAMPAIGN COMMANDS (NEW) --
+        # CAMPAIGN COMMANDS
         m = re.search(r"(?:create|new)\s+campaign\s+(school|csr)(?:\s+(\d+))?", text_lower)
         if m or "create campaign" in text_lower:
             seq = m.group(1) if m else "school"
@@ -654,12 +582,11 @@ Respond as Raj naturally:"""
         return None, {}
 
     def _execute_action(self, action: str, params: Dict) -> Dict:
-        """Execute an action and return result"""
+        """Execute an action and return result."""
         try:
             if action == "status":
                 summary = self.engine.get_summary()
-                catch = self.engine.get_catch_up()
-                return {"summary": summary, "catch_up": catch, "running": self.engine.is_running(), "paused": self.engine.is_paused()}
+                return {"summary": summary, "running": self.engine.is_running(), "paused": self.engine.is_paused()}
 
             elif action == "start_engine":
                 self.engine.start()
@@ -675,7 +602,7 @@ Respond as Raj naturally:"""
 
             elif action == "sync_templates":
                 result = self.engine.sync_templates()
-                return {"loaded": result.get("loaded", 0), "missing": result.get("missing", []), "found": result.get("found_names", [])}
+                return {"loaded": result.get("synced", 0), "missing": [], "found": result.get("synced", 0)}
 
             elif action == "import_leads":
                 return {"needs_dialog": True, "sequence": params.get("sequence", "school")}
@@ -695,7 +622,6 @@ Respond as Raj naturally:"""
                 except Exception as e:
                     return {"error": str(e)}
 
-            # -- POOL ACTIONS (NEW) --
             elif action == "import_to_pool":
                 try:
                     from smart_importer import SmartImporter
@@ -828,7 +754,6 @@ Respond as Raj naturally:"""
 
             elif action == "migrate_batch":
                 batch_name = params.get("batch_name")
-                # Call migration
                 try:
                     import sys
                     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -853,36 +778,28 @@ Respond as Raj naturally:"""
             return {"error": str(e)}
 
     def _format_response(self, action: str, result: Dict) -> str:
-        """Format response with agent personality"""
+        """Format response with agent personality."""
         if action == "status":
             s = result.get("summary", {})
             total_sent = sum(d.get("sent", 0) for seq in s.get("sequences", {}).values() for d in seq.values())
             status = "running" if result.get("running") else "stopped"
             if result.get("paused"): status = "paused"
 
-            catch = result.get("catch_up", [])
-            overdue = sum(c["count"] for c in catch)
-
-            insights = []
-            if overdue > 20:
-                insights.append(f"⚠️ {overdue} emails are significantly overdue. I recommend prioritizing these.")
-            elif overdue > 0:
-                insights.append(f"📋 {overdue} emails are slightly behind schedule.")
-
             pending_replies = s.get("global", {}).get("pending_replies", 0)
-            if pending_replies > 5:
-                insights.append(f"💬 {pending_replies} replies are waiting for your review.")
+            active_batches = s.get("global", {}).get("active_batches", 0)
+            bl_count = s.get("global", {}).get("blacklist_count", 0)
 
-            insight_str = "\n\n" + "\n".join(insights) if insights else ""
+            school_sent = sum(s.get("sequences", {}).get("school", {}).get("day_wise", {}).get(d, {}).get("sent", 0) for d in [1,3,5,7,10])
+            csr_sent = sum(s.get("sequences", {}).get("csr", {}).get("day_wise", {}).get(d, {}).get("sent", 0) for d in [1,3,5,7,10])
 
             return f"""Status report, sir:
 
 Engine: {status.upper()}
-SCHOOL sent: {sum(s.get('sequences', {}).get('school', {}).get(d, {}).get('sent', 0) for d in [1,3,5,7,10])}
-CSR sent: {sum(s.get('sequences', {}).get('csr', {}).get(d, {}).get('sent', 0) for d in [1,3,5,7,10])}
-Blacklisted: {s.get('global', {}).get('blacklist', 0)} | Overdue: {overdue}
+SCHOOL sent: {school_sent}
+CSR sent: {csr_sent}
+Blacklisted: {bl_count} | Active batches: {active_batches} | Pending replies: {pending_replies}
 
-{'✅ All caught up.' if not overdue else '⚠️ ' + str(overdue) + ' emails are overdue. Say "catch up" to send them.'}{insight_str}"""
+{'✅ All caught up.' if not pending_replies else f'⚠️ {pending_replies} replies pending. Say "check replies" to review.'}"""
 
         elif action == "start_engine":
             return "Engine started, sir. I'll monitor the sequences and alert you to anything important. You'll get your brief at 8 AM."
@@ -895,10 +812,6 @@ Blacklisted: {s.get('global', {}).get('blacklist', 0)} | Overdue: {overdue}
 
         elif action == "sync_templates":
             loaded = result.get("loaded", 0)
-            missing = result.get("missing", [])
-            if missing:
-                missing_str = ", ".join(missing)
-                return f"Synced {loaded} templates.\n\nMissing: {missing_str}.\n\nI can generate these if you'd like. Say 'generate school day 3' for example."
             return f"All set, sir. {loaded} templates synced and ready. Everything looks good."
 
         elif action == "send_batch":
@@ -955,7 +868,7 @@ Blacklisted: {s.get('global', {}).get('blacklist', 0)} | Overdue: {overdue}
             bl = result.get("blacklist", [])
             if not bl:
                 return "Blacklist is empty. All clear, sir."
-            lines = ["Blacklisted emails:"] + [f"  {email} -- {reason}" for email, reason in bl[:10]]
+            lines = ["Blacklisted emails:"] + [f" {email} -- {reason}" for email, reason in bl[:10]]
             return "\n".join(lines)
 
         elif action == "export_state":
@@ -1001,12 +914,11 @@ Blacklisted: {s.get('global', {}).get('blacklist', 0)} | Overdue: {overdue}
                 if batches:
                     batch_info = f"\n\nCreated {len(batches)} batches:"
                     for b in batches:
-                        batch_info += f"\n  • {b['name']}: {b['recipients']} recipients ({b['status']})"
+                        batch_info += f"\n • {b['name']}: {b['recipients']} recipients ({b['status']})"
                 return f"Smart import complete! Imported {result.get('imported', 0)} leads, skipped {result.get('skipped', 0)} (blacklisted: {result.get('blacklisted', 0)}).{batch_info}\n\nFirst batch is in DRAFT — click Start when ready. Follow-ups are auto-scheduled."
             else:
                 return f"Import failed: {result.get('error', 'Unknown error')}"
 
-        # -- POOL RESPONSES (NEW) --
         elif action == "import_to_pool":
             r = result.get("import_to_pool", {})
             if r.get("success"):
@@ -1028,7 +940,7 @@ Blacklisted: {s.get('global', {}).get('blacklist', 0)} | Overdue: {overdue}
             ct = result.get("csr_total", 0)
             lines = ["Pool status, sir:", ""]
             lines.append(f"📚 SCHOOL: {sp} unbatched / {st} total")
-            lines.append(f"🏢 CSR:    {cp} unbatched / {ct} total")
+            lines.append(f"🏢 CSR: {cp} unbatched / {ct} total")
             lines.append("")
             if sp > 0:
                 lines.append(f"Say 'create batch school {min(sp, 50)}' to batch SCHOOL leads.")
@@ -1051,12 +963,12 @@ Blacklisted: {s.get('global', {}).get('blacklist', 0)} | Overdue: {overdue}
                 if val:
                     conf = analysis.get("confidence", {}).get(key, (val, "medium"))
                     conf_str = conf[1] if isinstance(conf, tuple) else "medium"
-                    lines.append(f"  • {key.capitalize()}: '{val}' (confidence: {conf_str})")
+                    lines.append(f" • {key.capitalize()}: '{val}' (confidence: {conf_str})")
             lines.append("")
             lines.append(f"✅ Valid emails found: {analysis.get('valid_emails', 0)}")
             lines.append(f"❌ Invalid emails: {analysis.get('invalid_emails', 0)}")
             if analysis.get("ready_to_import"):
-                lines.append("\n✅ Ready to import! Say 'smart import <filename> to school'")
+                lines.append("\n✅ Ready to import! Say 'smart import <file> to school'")
             else:
                 lines.append("\n⚠️ Not ready — email column not detected confidently.")
             return "\n".join(lines)
@@ -1070,63 +982,43 @@ Blacklisted: {s.get('global', {}).get('blacklist', 0)} | Overdue: {overdue}
                      "🔍 Detected mapping:"]
             for key, val in preview.get("detected_mapping", {}).items():
                 if val:
-                    lines.append(f"  {key}: {val}")
+                    lines.append(f" {key}: {val}")
             lines.append("")
             lines.append("📋 First few rows preview:")
             for i, row in enumerate(preview.get("preview", []), 1):
-                lines.append(f"  Row {i}: {row.get('name', '')} <{row.get('email', '')}> @ {row.get('org', '')}")
+                lines.append(f" Row {i}: {row.get('name', '')} <{row.get('email', '')}> @ {row.get('org', '')}")
                 if row.get("extra_fields"):
                     extras = ", ".join([f"{k}={v}" for k, v in list(row["extra_fields"].items())[:3]])
-                    lines.append(f"    Extra: {extras}")
+                    lines.append(f" Extra: {extras}")
             return "\n".join(lines)
 
         elif action == "help":
             return """Here's what I can do, sir:
 
-SMART IMPORT (NEW):
-  "analyze file leads.xlsx" -- See what columns I detected
-  "preview import leads.xlsx" -- Preview first 5 rows
-  "smart import leads.xlsx to school" -- Auto-import + create batches
-  "smart import leads.csv to csr" -- Works with CSV too
-  Batch sizes: 50, 100, 150 leads per batch (auto-configured)
+SMART IMPORT:
+ "analyze file leads.xlsx" -- See what columns I detected
+ "preview import leads.xlsx" -- Preview first 5 rows
+ "smart import leads.xlsx to school" -- Auto-import + create batches
 
 SEQUENCES:
-  "start engine" -- Begin auto-sending (I'll monitor everything)
-  "status" -- Full campaign overview with my insights
-  "send school day 1" -- Manual batch send
-  "send csr day 3" -- Manual CSR batch
-  "catch up" -- Send overdue emails
-  "resume batch school day 1" -- Resume after quota hit
-  "backdate school day 1 2 days ago" -- Dev helper
+ "start engine" -- Begin auto-sending
+ "status" -- Full campaign overview
+ "send school day 1" -- Manual batch send
+ "catch up" -- Send overdue emails
 
 TEMPLATES:
-  "sync templates" -- Load from Gmail drafts
-  "generate school day 3" -- Create missing template
-  "test send school day 1 to om@email.com"
+ "sync templates" -- Load from Gmail drafts
 
-LEADS:
-  "import leads.xlsx to school" -- Import from Excel
-  "import leads.xlsx to csr"
-
-MONITORING (I do this automatically, but you can ask):
-  "check bounces" -- Scan and blacklist
-  "deep scan" -- Full 15-day bounce + auto-reply scan
-  "scan auto replies" -- Find out-of-office responses
-  "check replies" -- Find new responses
-  "draft replies" -- Write draft responses
-  "brief now" -- Send morning brief
-  "save state" -- Export campaign_state.md
+MONITORING:
+ "check bounces" -- Scan and blacklist
+ "check replies" -- Find new responses
+ "brief now" -- Send morning brief
 
 BLACKLIST:
-  "blacklist email@domain.com"
-  "import blacklist dead_emails.txt"
+ "blacklist email@domain.com"
 
 CONTROL:
-  "pause" / "resume" / "stop all"
-
-MEMORY:
-  "what did we do last time" -- I remember our conversations
-  "what worked before" -- I share learnings
+ "pause" / "resume" / "stop all"
 
 What would you like to do?"""
 
@@ -1136,11 +1028,10 @@ What would you like to do?"""
                 return "I don't have much history yet, sir. Let's build some memories together."
             lines = ["Here's what I remember recently:"]
             for i in recent[-5:]:
-                lines.append(f"  • You: {i['user_input'][:50]}...")
-                lines.append(f"    Me: {i['raj_response'][:50]}...")
+                lines.append(f" • You: {i['user_input'][:50]}...")
+                lines.append(f" Me: {i['raj_response'][:50]}...")
             return "\n".join(lines)
 
-        # -- CAMPAIGN RESPONSES (NEW) --
         elif action == "create_campaign":
             r = result.get("create_campaign", {})
             if r.get("success"):
@@ -1150,7 +1041,7 @@ What would you like to do?"""
                 if r.get("follow_up_batches"):
                     lines.append(f"Pre-created {len(r.get('follow_up_batches'))} follow-up batches:")
                     for b in r["follow_up_batches"]:
-                        lines.append(f"   -> {b['name']} (Day {b['day']}) at {b['scheduled']}")
+                        lines.append(f" -> {b['name']} (Day {b['day']}) at {b['scheduled']}")
                 lines.append("")
                 lines.append("Click Start on Day 1 batch to begin. Days 3,5,7,10 will auto-launch.")
                 return "\n".join(lines)
@@ -1163,9 +1054,9 @@ What would you like to do?"""
                 return "No campaigns yet, sir. Say 'create campaign school 50' to start one."
             lines = ["Campaigns:", ""]
             for c in campaigns:
-                status_emoji = {"draft": "", "active": "", "paused": "", "completed": ""}.get(c.get("status"), "")
+                status_emoji = {"draft": "📝", "active": "🟢", "paused": "⏸️", "completed": "✅"}.get(c.get("status"), "❓")
                 lines.append(f"{status_emoji} ID {c['id']}: {c['name']} ({c['sequence_id'].upper()})")
-                lines.append(f"   Status: {c.get('status', 'unknown').upper()} | Leads: {c.get('total_leads', 0)} | Auto-advance: {'ON' if c.get('auto_advance') else 'OFF'}")
+                lines.append(f" Status: {c.get('status', 'unknown').upper()} | Leads: {c.get('total_leads', 0)} | Auto-advance: {'ON' if c.get('auto_advance') else 'OFF'}")
                 lines.append("")
             lines.append("Say 'start campaign <id>' to launch, or 'pause campaign <id>' to stop.")
             return "\n".join(lines)

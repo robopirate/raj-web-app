@@ -1,6 +1,7 @@
 """
 gmail_web.py — Gmail API wrapper for WEB (Render/cloud).
 Uses OAuth 2.0 web flow with refresh tokens stored in DB.
+Fixed: send_email returns proper dict, added is_authenticated()
 """
 
 import os
@@ -68,7 +69,6 @@ class GmailWebClient:
 
                 if creds and creds.expired and creds.refresh_token:
                     creds.refresh(Request())
-                    # Save updated token
                     self._save_token(creds)
 
                 if creds and creds.valid:
@@ -93,6 +93,10 @@ class GmailWebClient:
         self.db.set_meta("gmail_refresh_token", json.dumps(token_data))
         self.db.commit()
 
+    def is_authenticated(self):
+        """Check if Gmail is connected and service is valid."""
+        return self.service is not None
+
     def get_auth_url(self):
         """Generate Google OAuth authorization URL."""
         try:
@@ -103,10 +107,9 @@ class GmailWebClient:
             authorization_url, state = flow.authorization_url(
                 access_type='offline',
                 include_granted_scopes='true',
-                prompt='consent'  # Force refresh token
+                prompt='consent'
             )
 
-            # Save state to verify callback
             self.db.set_meta("gmail_oauth_state", state)
             self.db.commit()
 
@@ -131,7 +134,6 @@ class GmailWebClient:
             self._save_token(creds)
             self.service = build('gmail', 'v1', credentials=creds)
 
-            # Verify by getting profile
             profile = self.service.users().getProfile(userId='me').execute()
             email = profile.get('emailAddress', 'unknown')
 
@@ -142,16 +144,21 @@ class GmailWebClient:
             print(f"[GmailWeb] Callback error: {e}")
             return {"success": False, "error": str(e)}
 
-    # ─── Gmail Operations (same interface as desktop) ───
+    # ─── Gmail Operations ───
 
     def send_email(self, to, subject, body_html):
         if not self.service:
-            raise RuntimeError("Gmail not connected. Please connect via Settings.")
-        message = MIMEText(body_html, 'html', 'utf-8')
-        message['to'] = to
-        message['subject'] = subject
-        raw = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
-        return self.service.users().messages().send(userId='me', body={'raw': raw}).execute()
+            return {"success": False, "error": "Gmail not connected. Please connect via Settings."}
+        try:
+            message = MIMEText(body_html, 'html', 'utf-8')
+            message['to'] = to
+            message['subject'] = subject
+            raw = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
+            result = self.service.users().messages().send(userId='me', body={'raw': raw}).execute()
+            return {"success": True, "id": result.get('id'), "threadId": result.get('threadId')}
+        except Exception as e:
+            print(f"[GmailWeb] send_email failed: {e}")
+            return {"success": False, "error": str(e)}
 
     def draft_email(self, to, subject, body_html):
         if not self.service:

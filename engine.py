@@ -1,6 +1,6 @@
 """
-engine.py -- RoboPirate Campaign Engine v5.5
-Fixed: Thread-safe DB connections, graceful error handling
+engine.py -- RoboPirate Campaign Engine v5.6
+Fixed: Thread-safe DB, singleton pattern, proper Gmail response handling
 """
 
 import os
@@ -12,10 +12,25 @@ import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 
+# Singleton lock to prevent multiple engine instances in gunicorn
+_engine_instance = None
+_engine_lock = threading.Lock()
+
 class CampaignEngine:
     """Email campaign engine with auto-advance and pipeline tracking."""
 
+    def __new__(cls, *args, **kwargs):
+        global _engine_instance
+        with _engine_lock:
+            if _engine_instance is None:
+                _engine_instance = super().__new__(cls)
+                _engine_instance._initialized = False
+            return _engine_instance
+
     def __init__(self, db, gmail=None):
+        if self._initialized:
+            return
+        self._initialized = True
         self.db = db
         self.gmail = gmail
         self.running = False
@@ -23,7 +38,7 @@ class CampaignEngine:
         self.thread = None
         self._stop_event = threading.Event()
         self.last_tick = 0
-        self.tick_interval = 30  # seconds
+        self.tick_interval = 30
         self.send_rate = 45
         self.stagger_minutes = 2
         self.morning_hour = 8
@@ -78,7 +93,7 @@ class CampaignEngine:
         return self.paused
 
     def _loop(self):
-        print("[Engine] [RESUME] No running batches from previous session")
+        print("[Engine] Loop started")
         while self.running and not self._stop_event.is_set():
             try:
                 if not self.paused:
@@ -198,8 +213,64 @@ class CampaignEngine:
 
                 except Exception as e:
                     print(f"[Engine] Error sending to {recipient.get('email', '?')}: {e}")
+
+            # Check if batch is complete
+            counts = self.db.batch_count_by_status(batch_id)
+            total = sum(counts.values())
+            sent = counts.get("sent", 0)
+            if sent >= total:
+                self.db.batch_update_status(batch_id, 'completed')
+                print(f"[Engine] Batch {batch_id} completed ({sent}/{total})")
+                # Auto-advance
+                if self.auto_advance:
+                    self._auto_advance(batch)
+
         except Exception as e:
             print(f"[Engine] Error in batch {batch_id}: {e}")
+
+    def _auto_advance(self, batch):
+        """Create next day batch when current batch completes."""
+        try:
+            current_day = batch.get("day_offset", 1)
+            next_day = current_day + 2  # Day 1 -> 3, 3 -> 5, etc.
+            if next_day > 10:
+                return
+
+            sequence_id = batch.get("sequence_id", "school")
+            parent_id = batch.get("id")
+            batch_name = batch.get("name", "")
+
+            # Extract base name (remove day suffix)
+            base_name = re.sub(r'[-_]?D\d+$', '', batch_name, flags=re.I).strip()
+            if not base_name:
+                base_name = sequence_id.upper()
+
+            next_name = f"{base_name}-D{next_day}"
+
+            # Schedule for +2 days at 10 AM
+            scheduled = (datetime.now() + timedelta(days=2)).replace(hour=10, minute=0, second=0, microsecond=0)
+
+            # Get recipients from parent batch
+            recipients = self.db.batch_get_recipients(parent_id)
+            if not recipients:
+                return
+
+            new_batch_id = self.db.batch_create(
+                name=next_name,
+                sequence_id=sequence_id,
+                scheduled_at=scheduled.isoformat(),
+                day_offset=next_day,
+                parent_batch_id=parent_id
+            )
+
+            for r in recipients:
+                self.db.batch_add_recipient(new_batch_id, r.get("id"))
+
+            self.db.batch_update_status(new_batch_id, 'scheduled')
+            print(f"[Engine] Auto-advanced: created {next_name} scheduled for {scheduled}")
+
+        except Exception as e:
+            print(f"[Engine] Auto-advance error: {e}")
 
     def _check_send_rate(self):
         try:
@@ -231,6 +302,8 @@ class CampaignEngine:
                             continue
                         self.db.blacklist_add(email, "bounce", "auto")
                         new_blacklisted += 1
+                        # Trash the bounce email
+                        self.gmail.trash_message(msg.get("id"))
                 except:
                     pass
 
@@ -273,7 +346,7 @@ class CampaignEngine:
                         VALUES (?, ?, ?, ?, ?, 'pending', CURRENT_TIMESTAMP)
                         ON CONFLICT(message_id) DO NOTHING
                     """, (
-                        msg.get("thread_id", ""),
+                        msg.get("threadId", ""),
                         msg.get("id", ""),
                         from_addr,
                         subject,

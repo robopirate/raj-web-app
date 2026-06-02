@@ -1,6 +1,6 @@
 """
-db.py -- RoboPirate Campaign Database v5.5
-Fixed: Auto-reconnect when PostgreSQL connection is closed
+db.py -- RoboPirate Campaign Database v5.6
+Fixed: Auto-reconnect, empty pipeline crash, added Raj brain tables
 """
 
 import os
@@ -20,6 +20,7 @@ class Database:
         self._connect()
         self._init_tables()
         self._migrate_schema()
+        self._init_raj_brain_tables()
 
     def _connect(self):
         """Create a fresh database connection."""
@@ -39,7 +40,6 @@ class Database:
             return
         try:
             if self.is_postgres:
-                # Test if connection is alive
                 cur = self.conn.cursor()
                 cur.execute('SELECT 1')
                 cur.close()
@@ -419,6 +419,95 @@ class Database:
         self.conn.commit()
         cur.close()
 
+    def _init_raj_brain_tables(self):
+        """Add Raj AI brain memory tables to the main database."""
+        if self.is_postgres:
+            cur = self.conn.cursor()
+            tables = [
+                """CREATE TABLE IF NOT EXISTS raj_interactions (
+                    id SERIAL PRIMARY KEY,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    user_input TEXT,
+                    raj_response TEXT,
+                    action TEXT,
+                    outcome TEXT,
+                    sentiment TEXT,
+                    context_json TEXT,
+                    sequence_id TEXT,
+                    day INTEGER,
+                    recipient_email TEXT
+                )""",
+                """CREATE INDEX IF NOT EXISTS idx_raj_interactions_time ON raj_interactions(timestamp)""",
+                """CREATE INDEX IF NOT EXISTS idx_raj_interactions_seq ON raj_interactions(sequence_id)""",
+                """CREATE TABLE IF NOT EXISTS raj_decisions (
+                    id SERIAL PRIMARY KEY,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    situation TEXT,
+                    options_json TEXT,
+                    chosen TEXT,
+                    reasoning TEXT,
+                    confidence REAL,
+                    result TEXT,
+                    feedback TEXT
+                )""",
+                """CREATE TABLE IF NOT EXISTS raj_learnings (
+                    id SERIAL PRIMARY KEY,
+                    category TEXT,
+                    pattern TEXT,
+                    insight TEXT,
+                    success_rate REAL,
+                    last_used TIMESTAMP,
+                    use_count INTEGER DEFAULT 0
+                )""",
+                """CREATE INDEX IF NOT EXISTS idx_raj_learnings_cat ON raj_learnings(category)""",
+            ]
+            for sql in tables:
+                cur.execute(sql)
+            self.conn.commit()
+            cur.close()
+        else:
+            self.conn.executescript("""
+                CREATE TABLE IF NOT EXISTS raj_interactions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
+                    user_input TEXT,
+                    raj_response TEXT,
+                    action TEXT,
+                    outcome TEXT,
+                    sentiment TEXT,
+                    context_json TEXT,
+                    sequence_id TEXT,
+                    day INTEGER,
+                    recipient_email TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_raj_interactions_time ON raj_interactions(timestamp);
+                CREATE INDEX IF NOT EXISTS idx_raj_interactions_seq ON raj_interactions(sequence_id);
+
+                CREATE TABLE IF NOT EXISTS raj_decisions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
+                    situation TEXT,
+                    options_json TEXT,
+                    chosen TEXT,
+                    reasoning TEXT,
+                    confidence REAL,
+                    result TEXT,
+                    feedback TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS raj_learnings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    category TEXT,
+                    pattern TEXT,
+                    insight TEXT,
+                    success_rate REAL,
+                    last_used TEXT,
+                    use_count INTEGER DEFAULT 0
+                );
+                CREATE INDEX IF NOT EXISTS idx_raj_learnings_cat ON raj_learnings(category);
+            """)
+            self.conn.commit()
+
     def _migrate_schema(self):
         try:
             self.execute("SELECT parent_batch_id FROM batches LIMIT 1")
@@ -478,8 +567,8 @@ class Database:
                 INSERT INTO recipients (sequence_id, email, name, org, extra_json, import_status, batched)
                 VALUES (?, ?, ?, ?, ?, 'success', 0)
                 ON CONFLICT(sequence_id, email) DO UPDATE SET
-                name=excluded.name, org=excluded.org, extra_json=excluded.extra_json,
-                import_status='success', import_error=NULL, batched=0
+                    name=excluded.name, org=excluded.org, extra_json=excluded.extra_json,
+                    import_status='success', import_error=NULL, batched=0
             """, (sequence_id, email.lower().strip(), name, org, extra_json))
             self.commit()
             return True, None
@@ -651,8 +740,8 @@ class Database:
             INSERT INTO templates (sequence_id, day, subject, html_body, source)
             VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(sequence_id, day) DO UPDATE SET
-            subject=excluded.subject, html_body=excluded.html_body,
-            source=excluded.source, cached_at=CURRENT_TIMESTAMP
+                subject=excluded.subject, html_body=excluded.html_body,
+                source=excluded.source, cached_at=CURRENT_TIMESTAMP
         """, (sequence_id, day, subject, html_body, source))
         self.commit()
 
@@ -686,12 +775,12 @@ class Database:
     def get_pipeline(self, sequence_id=None):
         sql = """
             SELECT
-            r.sequence_id,
-            COUNT(DISTINCT r.id) as total_recipients,
-            COUNT(DISTINCT CASE WHEN s.status='drafted' THEN s.recipient_id END) as drafted,
-            COUNT(DISTINCT CASE WHEN s.status='sent' THEN s.recipient_id END) as sent,
-            COUNT(DISTINCT CASE WHEN s.status='bounced' THEN s.recipient_id END) as bounced,
-            COUNT(DISTINCT CASE WHEN s.status='replied' THEN s.recipient_id END) as replied
+                r.sequence_id,
+                COUNT(DISTINCT r.id) as total_recipients,
+                COUNT(DISTINCT CASE WHEN s.status='drafted' THEN s.recipient_id END) as drafted,
+                COUNT(DISTINCT CASE WHEN s.status='sent' THEN s.recipient_id END) as sent,
+                COUNT(DISTINCT CASE WHEN s.status='bounced' THEN s.recipient_id END) as bounced,
+                COUNT(DISTINCT CASE WHEN s.status='replied' THEN s.recipient_id END) as replied
             FROM recipients r
             LEFT JOIN sends s ON r.id = s.recipient_id
         """
@@ -705,10 +794,10 @@ class Database:
     def get_day_wise_pipeline(self, sequence_id):
         cur = self.execute("""
             SELECT day,
-            COUNT(DISTINCT recipient_id) as total,
-            COUNT(DISTINCT CASE WHEN status='sent' THEN recipient_id END) as sent,
-            COUNT(DISTINCT CASE WHEN status='bounced' THEN recipient_id END) as bounced,
-            COUNT(DISTINCT CASE WHEN status='replied' THEN recipient_id END) as replied
+                COUNT(DISTINCT recipient_id) as total,
+                COUNT(DISTINCT CASE WHEN status='sent' THEN recipient_id END) as sent,
+                COUNT(DISTINCT CASE WHEN status='bounced' THEN recipient_id END) as bounced,
+                COUNT(DISTINCT CASE WHEN status='replied' THEN recipient_id END) as replied
             FROM sends
             WHERE recipient_id IN (SELECT id FROM recipients WHERE sequence_id=?)
             GROUP BY day
@@ -900,7 +989,7 @@ class Database:
         rows = self._fetchall(cur)
         return rows[0] if rows else None
 
-    # ─── DASHBOARD SUMMARY ───
+    # ─── DASHBOARD SUMMARY (FIXED: empty pipeline crash) ───
     def get_dashboard_summary(self):
         summary = {"sequences": {}, "global": {}}
 
@@ -981,3 +1070,44 @@ class Database:
         except Exception as e:
             print(f"Activity log error: {e}")
             return []
+
+    # ─── RAJ BRAIN MEMORY METHODS ───
+    def raj_remember_interaction(self, user_input, raj_response, action="", outcome="", sentiment="neutral", context_json="{}", sequence_id=None, day=None, recipient_email=None):
+        self.execute("""
+            INSERT INTO raj_interactions (user_input, raj_response, action, outcome, sentiment, context_json, sequence_id, day, recipient_email)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (user_input, raj_response, action, outcome, sentiment, context_json, sequence_id, day, recipient_email))
+        self.commit()
+
+    def raj_get_recent_interactions(self, limit=20):
+        cur = self.execute("""
+            SELECT * FROM raj_interactions ORDER BY timestamp DESC LIMIT ?
+        """, (limit,))
+        return self._fetchall(cur)
+
+    def raj_add_learning(self, category, pattern, insight, success_rate=0.5):
+        # Check if exists
+        cur = self.execute("SELECT id, success_rate, use_count FROM raj_learnings WHERE category=? AND pattern=?", (category, pattern))
+        existing = cur.fetchone()
+        if existing:
+            new_rate = (existing[1] * existing[2] + success_rate) / (existing[2] + 1)
+            self.execute("""
+                UPDATE raj_learnings SET success_rate=?, use_count=use_count+1, last_used=CURRENT_TIMESTAMP WHERE id=?
+            """, (new_rate, existing[0]))
+        else:
+            self.execute("""
+                INSERT INTO raj_learnings (category, pattern, insight, success_rate, last_used)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """, (category, pattern, insight, success_rate))
+        self.commit()
+
+    def raj_get_learnings(self, category=None, limit=10):
+        if category:
+            cur = self.execute("""
+                SELECT * FROM raj_learnings WHERE category=? ORDER BY success_rate DESC, use_count DESC LIMIT ?
+            """, (category, limit))
+        else:
+            cur = self.execute("""
+                SELECT * FROM raj_learnings ORDER BY success_rate DESC, use_count DESC LIMIT ?
+            """, (limit,))
+        return self._fetchall(cur)
