@@ -89,7 +89,7 @@ def serve_static(path):
 # ─── Health Check ───
 @app.route('/health')
 def health_check():
-    return jsonify({"status": "ok", "version": "5.7.2", "timestamp": datetime.now().isoformat()})
+    return jsonify({"status": "ok", "version": "5.8", "timestamp": datetime.now().isoformat()})
 
 # ═══════════════════════════════════════════════
 # GMAIL WEB OAUTH

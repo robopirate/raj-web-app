@@ -1,6 +1,6 @@
 """
-engine.py -- RoboPirate Campaign Engine v5.6
-Fixed: Thread-safe DB, singleton pattern, proper Gmail response handling
+engine.py -- RoboPirate Campaign Engine v5.8 (Web-Friendly)
+Fixed: Non-blocking tick, sends 1 email per tick, gunicorn-safe
 """
 
 import os
@@ -17,7 +17,7 @@ _engine_instance = None
 _engine_lock = threading.Lock()
 
 class CampaignEngine:
-    """Email campaign engine with auto-advance and pipeline tracking."""
+    """Email campaign engine - web-safe, non-blocking."""
 
     def __new__(cls, *args, **kwargs):
         global _engine_instance
@@ -38,7 +38,7 @@ class CampaignEngine:
         self.thread = None
         self._stop_event = threading.Event()
         self.last_tick = 0
-        self.tick_interval = 30
+        self.tick_interval = 10  # 10 seconds - web safe
         self.send_rate = 45
         self.stagger_minutes = 2
         self.morning_hour = 8
@@ -46,6 +46,7 @@ class CampaignEngine:
         self.auto_advance = True
         self.sunday_filter = True
         self.timezone = 'Asia/Kolkata'
+        self._last_send_time = {}  # batch_id -> last_send_timestamp
         self._load_settings()
 
     def _load_settings(self):
@@ -69,7 +70,7 @@ class CampaignEngine:
         self._stop_event.clear()
         self.thread = threading.Thread(target=self._loop, daemon=True)
         self.thread.start()
-        print("[Engine] Raj Engine started")
+        print("[Engine] Raj Engine started (web-safe mode)")
 
     def stop(self):
         self.running = False
@@ -93,19 +94,20 @@ class CampaignEngine:
         return self.paused
 
     def _loop(self):
-        print("[Engine] Loop started")
+        print("[Engine] Loop started (10s ticks, 1 email max per tick)")
         while self.running and not self._stop_event.is_set():
             try:
                 if not self.paused:
                     self._tick()
             except Exception as e:
                 print(f"[Engine] LOOP ERROR: {e}")
-            time.sleep(self.tick_interval)
+            # Short sleep - never block for long
+            self._stop_event.wait(self.tick_interval)
 
     def _tick(self):
         now = datetime.now()
 
-        # Check scheduled batches
+        # 1. Check scheduled batches (fast)
         try:
             scheduled = self.db.get_scheduled_batches() if self.db else []
             for batch in scheduled:
@@ -119,22 +121,22 @@ class CampaignEngine:
                     except:
                         pass
         except Exception as e:
-            print(f"[Engine] Scheduled batch check error: {e}")
+            print(f"[Engine] Scheduled check error: {e}")
 
-        # Process running batches
+        # 2. Send ONE email from running batches (non-blocking)
         try:
-            self._process_running_batches()
+            self._send_one_email()
         except Exception as e:
-            print(f"[Engine] Running batch process error: {e}")
+            print(f"[Engine] Send error: {e}")
 
-        # Scan bounces (only if Gmail available)
+        # 3. Scan bounces (only if Gmail available, quick scan)
         if self.gmail and self.running:
             try:
                 self.scan_bounces()
             except Exception as e:
                 print(f"[Engine] Bounce scan error: {e}")
 
-        # Scan replies (only if Gmail available)
+        # 4. Scan replies (quick)
         if self.gmail and self.running:
             try:
                 self.scan_replies()
@@ -148,91 +150,110 @@ class CampaignEngine:
         except Exception as e:
             print(f"[Engine] Error starting batch {batch_id}: {e}")
 
-    def _process_running_batches(self):
+    def _send_one_email(self):
+        """Send exactly ONE email per tick - never blocks for long."""
         if not self.gmail:
             return
 
         try:
             running = self.db.get_running_batches() if self.db else []
+            if not running:
+                return
+
             for batch in running:
-                try:
-                    self._send_batch_emails(batch)
-                except Exception as e:
-                    print(f"[Engine] Error sending batch {batch.get('id', '?')}: {e}")
-        except Exception as e:
-            print(f"[Engine] Error getting running batches: {e}")
+                batch_id = batch.get("id")
 
-    def _send_batch_emails(self, batch):
-        batch_id = batch.get("id")
-        sequence_id = batch.get("sequence_id", "school")
-        day_offset = batch.get("day_offset", 1)
+                # Check stagger - don't send if we sent to this batch recently
+                last_send = self._last_send_time.get(batch_id)
+                if last_send:
+                    elapsed = (datetime.now() - last_send).total_seconds() / 60
+                    if elapsed < self.stagger_minutes:
+                        continue  # Skip this batch, not enough time passed
 
-        try:
-            template = self.db.template_get(sequence_id, day_offset) if self.db else None
-            if not template:
-                print(f"[Engine] No template for {sequence_id} day {day_offset}")
-                return
+                # Check send rate
+                if not self._check_send_rate():
+                    return
 
-            recipients = self.db.batch_get_recipients(batch_id) if self.db else []
-            if not recipients:
-                return
+                # Get next pending recipient
+                recipients = self.db.batch_get_recipients(batch_id)
+                pending = [r for r in recipients if r.get("batch_status") == "pending"]
 
-            for recipient in recipients:
-                if recipient.get("batch_status") != "pending":
+                if not pending:
+                    # Batch complete
+                    self._complete_batch(batch)
                     continue
 
-                try:
-                    email = recipient.get("email", "")
-                    if not email or self.db.blacklist_has(email):
-                        continue
+                # Send to ONE recipient
+                recipient = pending[0]
+                email = recipient.get("email", "").strip().lower()
 
-                    if not self._check_send_rate():
-                        break
+                if not email or self.db.blacklist_has(email):
+                    # Skip this recipient, mark as skipped
+                    self.db.execute(
+                        "UPDATE batch_recipients SET status='skipped' WHERE batch_id=? AND recipient_id=?",
+                        (batch_id, recipient.get("id"))
+                    )
+                    self.db.commit()
+                    continue
 
-                    subject = template.get("subject", "")
-                    html_body = template.get("html_body", "")
+                # Get template
+                sequence_id = batch.get("sequence_id", "school")
+                day_offset = batch.get("day_offset", 1)
+                template = self.db.template_get(sequence_id, day_offset)
 
-                    name = recipient.get("name", "")
-                    org = recipient.get("org", "")
-                    subject = subject.replace("{{name}}", name).replace("{{org}}", org)
-                    html_body = html_body.replace("{{name}}", name).replace("{{org}}", org)
+                if not template:
+                    print(f"[Engine] No template for {sequence_id} day {day_offset}")
+                    return
 
-                    if self.gmail and hasattr(self.gmail, 'send_email'):
-                        result = self.gmail.send_email(email, subject, html_body)
-                        if result.get("success"):
-                            self.db.execute(
-                                "UPDATE batch_recipients SET status='sent', sent_at=CURRENT_TIMESTAMP WHERE batch_id=? AND recipient_id=?",
-                                (batch_id, recipient.get("id"))
-                            )
-                            self.db.commit()
-                            print(f"[Engine] Sent to {email}")
-                        else:
-                            print(f"[Engine] Failed to send to {email}: {result.get('error')}")
+                # Personalize
+                name = recipient.get("name", "")
+                org = recipient.get("org", "")
+                subject = template.get("subject", "").replace("{{name}}", name).replace("{{org}}", org)
+                html_body = template.get("html_body", "").replace("{{name}}", name).replace("{{org}}", org)
 
-                    time.sleep(self.stagger_minutes * 60)
+                # Send
+                if self.gmail and hasattr(self.gmail, 'send_email'):
+                    result = self.gmail.send_email(email, subject, html_body)
+                    if result.get("success"):
+                        self.db.execute(
+                            "UPDATE batch_recipients SET status='sent', sent_at=CURRENT_TIMESTAMP WHERE batch_id=? AND recipient_id=?",
+                            (batch_id, recipient.get("id"))
+                        )
+                        self.db.commit()
+                        self._last_send_time[batch_id] = datetime.now()
+                        print(f"[Engine] Sent to {email}")
 
-                except Exception as e:
-                    print(f"[Engine] Error sending to {recipient.get('email', '?')}: {e}")
+                        # Record send
+                        self.db.execute(
+                            "INSERT INTO sends (recipient_id, batch_id, day, subject, status, sent_at) VALUES (?, ?, ?, ?, 'sent', CURRENT_TIMESTAMP)",
+                            (recipient.get("id"), batch_id, day_offset, subject)
+                        )
+                        self.db.commit()
+                    else:
+                        print(f"[Engine] Failed to send to {email}: {result.get('error')}")
 
-            # Check if batch is complete
-            counts = self.db.batch_count_by_status(batch_id)
-            total = sum(counts.values())
-            sent = counts.get("sent", 0)
-            if sent >= total:
-                self.db.batch_update_status(batch_id, 'completed')
-                print(f"[Engine] Batch {batch_id} completed ({sent}/{total})")
-                # Auto-advance
-                if self.auto_advance:
-                    self._auto_advance(batch)
+                return  # Sent ONE email, exit - next one in next tick
 
         except Exception as e:
-            print(f"[Engine] Error in batch {batch_id}: {e}")
+            print(f"[Engine] Error in send_one: {e}")
+
+    def _complete_batch(self, batch):
+        """Mark batch as complete and auto-advance."""
+        try:
+            batch_id = batch.get("id")
+            self.db.batch_update_status(batch_id, 'completed')
+            print(f"[Engine] Batch {batch_id} completed")
+
+            if self.auto_advance:
+                self._auto_advance(batch)
+        except Exception as e:
+            print(f"[Engine] Error completing batch: {e}")
 
     def _auto_advance(self, batch):
         """Create next day batch when current batch completes."""
         try:
             current_day = batch.get("day_offset", 1)
-            next_day = current_day + 2  # Day 1 -> 3, 3 -> 5, etc.
+            next_day = current_day + 2
             if next_day > 10:
                 return
 
@@ -240,17 +261,13 @@ class CampaignEngine:
             parent_id = batch.get("id")
             batch_name = batch.get("name", "")
 
-            # Extract base name (remove day suffix)
-            base_name = re.sub(r'[-_]?D\d+$', '', batch_name, flags=re.I).strip()
+            base_name = re.sub(r'[-_]D\d+$', '', batch_name, flags=re.I).strip()
             if not base_name:
                 base_name = sequence_id.upper()
 
             next_name = f"{base_name}-D{next_day}"
-
-            # Schedule for +2 days at 10 AM
             scheduled = (datetime.now() + timedelta(days=2)).replace(hour=10, minute=0, second=0, microsecond=0)
 
-            # Get recipients from parent batch
             recipients = self.db.batch_get_recipients(parent_id)
             if not recipients:
                 return
@@ -267,7 +284,7 @@ class CampaignEngine:
                 self.db.batch_add_recipient(new_batch_id, r.get("id"))
 
             self.db.batch_update_status(new_batch_id, 'scheduled')
-            print(f"[Engine] Auto-advanced: created {next_name} scheduled for {scheduled}")
+            print(f"[Engine] Auto-advanced: {next_name} scheduled for {scheduled}")
 
         except Exception as e:
             print(f"[Engine] Auto-advance error: {e}")
@@ -287,7 +304,6 @@ class CampaignEngine:
 
     def scan_bounces(self):
         if not self.gmail or not hasattr(self.gmail, 'search_messages'):
-            print("[Engine] Bounce scan skipped: Gmail not available")
             return {"count": 0, "new_blacklisted": 0}
 
         try:
@@ -302,7 +318,6 @@ class CampaignEngine:
                             continue
                         self.db.blacklist_add(email, "bounce", "auto")
                         new_blacklisted += 1
-                        # Trash the bounce email
                         self.gmail.trash_message(msg.get("id"))
                 except:
                     pass
@@ -328,7 +343,6 @@ class CampaignEngine:
 
     def scan_replies(self):
         if not self.gmail or not hasattr(self.gmail, 'search_messages'):
-            print("[Engine] Reply scan skipped: Gmail not available")
             return 0
 
         try:
