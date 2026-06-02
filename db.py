@@ -991,6 +991,7 @@ class Database:
 
     # ─── DASHBOARD SUMMARY (FIXED: empty pipeline crash) ───
     def get_dashboard_summary(self):
+        """Fast dashboard summary using simple COUNT queries."""
         summary = {"sequences": {}, "global": {}}
 
         for seq_id in ["school", "csr"]:
@@ -998,30 +999,57 @@ class Database:
             seq["recipients"] = self.recipient_count(seq_id)
             seq["pool_count"] = self.get_pool_count(seq_id)
 
+            # Templates - fast query
             cur = self.execute("SELECT day, source, locked FROM templates WHERE sequence_id=?", (seq_id,))
             tmpl_rows = cur.fetchall()
             seq["templates"] = {r[0]: {"source": r[1], "locked": bool(r[2])} for r in tmpl_rows}
             seq["templates_total"] = len(tmpl_rows)
             seq["templates_locked"] = sum(1 for t in tmpl_rows if t[2])
 
-            pipeline = self.get_pipeline(seq_id)
-            if pipeline:
-                p = pipeline[0]
-                seq["pipeline"] = {
-                    "total": p["total_recipients"],
-                    "drafted": p["drafted"],
-                    "sent": p["sent"],
-                    "bounced": p["bounced"],
-                    "replied": p["replied"]
-                }
-            else:
-                seq["pipeline"] = {"total": 0, "drafted": 0, "sent": 0, "bounced": 0, "replied": 0}
+            # Pipeline - use fast COUNT queries instead of JOINs
+            cur = self.execute("SELECT COUNT(*) FROM recipients WHERE sequence_id=?", (seq_id,))
+            total_recipients = cur.fetchone()[0]
 
+            # Count sends by status for this sequence
+            cur = self.execute("""
+                SELECT COUNT(DISTINCT s.recipient_id) 
+                FROM sends s 
+                JOIN recipients r ON s.recipient_id = r.id 
+                WHERE r.sequence_id=? AND s.status='sent'
+            """, (seq_id,))
+            sent_count = cur.fetchone()[0]
+
+            cur = self.execute("""
+                SELECT COUNT(DISTINCT s.recipient_id) 
+                FROM sends s 
+                JOIN recipients r ON s.recipient_id = r.id 
+                WHERE r.sequence_id=? AND s.status='bounced'
+            """, (seq_id,))
+            bounced_count = cur.fetchone()[0]
+
+            cur = self.execute("""
+                SELECT COUNT(DISTINCT s.recipient_id) 
+                FROM sends s 
+                JOIN recipients r ON s.recipient_id = r.id 
+                WHERE r.sequence_id=? AND s.status='replied'
+            """, (seq_id,))
+            replied_count = cur.fetchone()[0]
+
+            seq["pipeline"] = {
+                "total": total_recipients,
+                "drafted": 0,
+                "sent": sent_count,
+                "bounced": bounced_count,
+                "replied": replied_count
+            }
+
+            # Day-wise - fast query
             seq["day_wise"] = self.get_day_wise_pipeline(seq_id)
             seq["batches"] = self.batch_get_all(seq_id)
 
             summary["sequences"][seq_id] = seq
 
+        # Global counts - fast queries
         cur = self.execute("SELECT COUNT(*) FROM blacklist")
         bl_count = cur.fetchone()[0]
 
