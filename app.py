@@ -1,6 +1,6 @@
 """
-app.py -- Raj Web App v5.7.2 (Minimal Fix)
-Only changes migration import and HTML strings
+app.py -- Raj Web App v5.9 (Clean Build)
+Minimal, stable, web-safe
 """
 
 import os
@@ -14,19 +14,17 @@ from datetime import datetime
 from flask import Flask, request, jsonify, send_from_directory, g
 from flask_cors import CORS
 
-# ─── Flask App ───
 app = Flask(__name__, static_folder='dist', static_url_path='')
 CORS(app)
 
 API_DIR = Path(__file__).parent
 
-# ─── Global State ───
 engine = None
 brain = None
 _db_instance = None
 _db_lock = threading.Lock()
 
-# ─── Database Singleton (per thread safety) ───
+# ─── Database Singleton ───
 def get_db():
     global _db_instance
     if _db_instance is None:
@@ -43,16 +41,14 @@ def get_engine():
         db = get_db()
         from engine import CampaignEngine
         engine = CampaignEngine(db)
-        # Try to auto-connect Gmail if token exists
         try:
             from gmail_web import GmailWebClient
             gmail = GmailWebClient(db)
             if gmail.is_authenticated():
                 engine.gmail = gmail
-                print("[App] Gmail auto-connected from stored token")
+                print("[App] Gmail auto-connected")
         except Exception as e:
             print(f"[App] Gmail auto-connect failed: {e}")
-        # Start engine loop
         engine.start()
     return engine
 
@@ -64,17 +60,14 @@ def get_brain():
         brain = RajBrain(get_engine())
     return brain
 
-# ─── Init on first request (not at import time) ───
 @app.before_request
 def before_request():
     g.db = get_db()
-    # Lazy init engine on first request
     if engine is None:
         get_engine()
     if brain is None:
         get_brain()
 
-# ─── SPA Routes ───
 @app.route('/')
 def serve_index():
     return send_from_directory(app.static_folder, 'index.html')
@@ -86,211 +79,23 @@ def serve_static(path):
         return send_from_directory(app.static_folder, path)
     return send_from_directory(app.static_folder, 'index.html')
 
-# ─── Health Check ───
 @app.route('/health')
 def health_check():
-    return jsonify({"status": "ok", "version": "5.8", "timestamp": datetime.now().isoformat()})
+    return jsonify({"status": "ok", "version": "5.9", "timestamp": datetime.now().isoformat()})
 
 # ═══════════════════════════════════════════════
-# GMAIL WEB OAUTH
+# GMAIL OAUTH
 # ═══════════════════════════════════════════════
-
-CONNECT_HTML = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Connect Gmail - Raj</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-            font-family: 'Segoe UI', system-ui, sans-serif; 
-            background: #0f172a; 
-            color: #e2e8f0; 
-            display: flex; 
-            justify-content: center; 
-            align-items: center; 
-            min-height: 100vh; 
-            padding: 20px;
-        }
-        .card { 
-            background: #1e293b; 
-            border-radius: 16px; 
-            padding: 40px; 
-            max-width: 500px; 
-            width: 100%; 
-            box-shadow: 0 20px 60px rgba(0,0,0,0.4); 
-            text-align: center; 
-        }
-        .logo { font-size: 48px; margin-bottom: 10px; }
-        h1 { color: #38bdf8; margin-bottom: 8px; font-size: 26px; }
-        .subtitle { color: #94a3b8; margin-bottom: 30px; font-size: 15px; }
-        .status-box { 
-            padding: 14px 20px; 
-            border-radius: 10px; 
-            margin-bottom: 25px; 
-            font-weight: 600; 
-            font-size: 15px;
-        }
-        .status-box.connected { background: #064e3b; color: #34d399; border: 1px solid #059669; }
-        .status-box.disconnected { background: #450a0a; color: #f87171; border: 1px solid #dc2626; }
-        .btn { 
-            display: inline-block; 
-            padding: 16px 40px; 
-            border-radius: 10px; 
-            text-decoration: none;
-            font-weight: 700; 
-            font-size: 16px; 
-            cursor: pointer; 
-            border: none; 
-            transition: all 0.2s; 
-            width: 100%;
-        }
-        .btn-primary { 
-            background: #38bdf8; 
-            color: #0f172a; 
-        }
-        .btn-primary:hover { 
-            background: #7dd3fc; 
-            transform: translateY(-2px); 
-            box-shadow: 0 8px 25px rgba(56,189,248,0.3);
-        }
-        .btn-secondary { 
-            background: #334155; 
-            color: #e2e8f0; 
-            margin-top: 12px; 
-            font-size: 14px;
-            padding: 12px 24px;
-        }
-        .btn-secondary:hover { background: #475569; }
-        .info { 
-            margin-top: 30px; 
-            padding: 18px; 
-            background: #0f172a; 
-            border-radius: 10px; 
-            font-size: 13px; 
-            color: #64748b; 
-            text-align: left; 
-            line-height: 1.6;
-        }
-        .info strong { color: #94a3b8; }
-        .info code { 
-            color: #38bdf8; 
-            background: #1e293b; 
-            padding: 2px 6px; 
-            border-radius: 4px; 
-            font-family: monospace;
-            font-size: 12px;
-        }
-        .spinner {
-            width: 24px;
-            height: 24px;
-            border: 3px solid #334155;
-            border-top-color: #38bdf8;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 15px;
-            display: none;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        .hidden { display: none !important; }
-    </style>
-</head>
-<body>
-    <div class="card">
-        <div class="logo">🔐</div>
-        <h1>Connect Gmail</h1>
-        <p class="subtitle">Allow Raj to send emails from info@robopirate.in</p>
-
-        <div class="spinner" id="spinner"></div>
-
-        <div id="status-box" class="status-box disconnected">
-            Checking Gmail status...
-        </div>
-
-        <div id="action-area">
-            <button class="btn btn-primary" id="connect-btn" onclick="connectGmail()">
-                Connect Gmail Account
-            </button>
-        </div>
-
-        <a href="/" class="btn btn-secondary">← Back to Dashboard</a>
-
-        <div class="info">
-            <strong>How it works:</strong><br>
-            1. Click the button above<br>
-            2. Sign in with Google (info@robopirate.in)<br>
-            3. Grant permission to send emails<br>
-            4. Raj will handle the rest automatically<br><br>
-            <strong>Redirect URI:</strong> <code>https://raj-web-app.onrender.com/oauth2callback</code>
-        </div>
-    </div>
-
-    <script>
-        async function checkStatus() {
-            try {
-                const res = await fetch('/api/gmail/status');
-                const data = await res.json();
-                const box = document.getElementById('status-box');
-                const btn = document.getElementById('connect-btn');
-
-                if (data.connected) {
-                    box.className = 'status-box connected';
-                    box.textContent = '✅ Gmail Connected & Ready';
-                    btn.textContent = 'Gmail Already Connected';
-                    btn.disabled = true;
-                    btn.style.opacity = '0.6';
-                    btn.style.cursor = 'default';
-                } else {
-                    box.className = 'status-box disconnected';
-                    box.textContent = '❌ Gmail Not Connected';
-                }
-            } catch(e) {
-                console.error('Status check failed:', e);
-                document.getElementById('status-box').className = 'status-box disconnected';
-                document.getElementById('status-box').textContent = '⚠️ Could not check status';
-            }
-        }
-
-        async function connectGmail() {
-            const spinner = document.getElementById('spinner');
-            const btn = document.getElementById('connect-btn');
-
-            spinner.style.display = 'block';
-            btn.disabled = true;
-            btn.textContent = 'Loading...';
-
-            try {
-                const res = await fetch('/api/gmail/auth-url');
-                const data = await res.json();
-
-                if (data.auth_url) {
-                    window.location.href = data.auth_url;
-                } else {
-                    alert('Error: ' + (data.error || 'Could not get auth URL'));
-                    spinner.style.display = 'none';
-                    btn.disabled = false;
-                    btn.textContent = 'Connect Gmail Account';
-                }
-            } catch(e) {
-                alert('Failed to get auth URL. Check console.');
-                console.error(e);
-                spinner.style.display = 'none';
-                btn.disabled = false;
-                btn.textContent = 'Connect Gmail Account';
-            }
-        }
-
-        checkStatus();
-    </script>
-</body>
-</html>
-"""
 
 @app.route('/connect-gmail')
 def connect_gmail_page():
-    return CONNECT_HTML
+    return """<html><head><meta charset="utf-8"><title>Connect Gmail</title>
+    <style>body{font-family:sans-serif;text-align:center;padding:50px;background:#0f172a;color:#e2e8f0;}
+    .btn{display:inline-block;padding:16px 40px;background:#38bdf8;color:#0f172a;border-radius:10px;text-decoration:none;font-weight:700;font-size:16px;margin-top:20px;}
+    .btn:hover{background:#7dd3fc;}</style></head>
+    <body><h1 style="color:#38bdf8;">Connect Gmail</h1><p>Click below to authorize Raj to send emails.</p>
+    <a href="/api/gmail/auth-url" class="btn">Connect Gmail Account</a><br><br>
+    <a href="/" style="color:#94a3b8;text-decoration:none;">Back to Dashboard</a></body></html>"""
 
 @app.route('/oauth2callback')
 def oauth2callback():
@@ -302,25 +107,9 @@ def oauth2callback():
         if result.get('success'):
             eng = get_engine()
             eng.gmail = client
-            return """
-            <html><head><meta charset="utf-8"><title>Gmail Connected</title>
-            <style>body{font-family:sans-serif;text-align:center;padding:50px;background:#0f172a;color:#e2e8f0;}
-            .success{color:#34d399;font-size:28px;margin-bottom:20px;}a{color:#38bdf8;font-size:18px;text-decoration:none;}
-            .btn{display:inline-block;padding:14px 32px;background:#38bdf8;color:#0f172a;border-radius:8px;margin-top:20px;font-weight:600;}</style></head>
-            <body><div class="success">✅ Gmail Connected!</div>
-            <p>Raj can now send emails from the cloud.</p>
-            <a href="/" class="btn">Go to Dashboard</a></body></html>
-            """
+            return "<html><body style='text-align:center;padding:50px;background:#0f172a;color:#34d399;font-family:sans-serif;'><h1>Gmail Connected!</h1><p>Raj can now send emails.</p><a href='/' style='color:#38bdf8;font-size:18px;'>Go to Dashboard</a></body></html>"
         else:
-            error_msg = result.get('error', 'Unknown error')
-            return """
-            <html><head><meta charset="utf-8"><title>Connection Failed</title>
-            <style>body{font-family:sans-serif;text-align:center;padding:50px;background:#0f172a;color:#e2e8f0;}
-            .error{color:#f87171;font-size:28px;margin-bottom:20px;}a{color:#38bdf8;}</style></head>
-            <body><div class="error">❌ Connection Failed</div>
-            <p>""" + error_msg + """</p>
-            <a href="/connect-gmail">Try Again</a> | <a href="/">Dashboard</a></body></html>
-            """, 400
+            return "<html><body style='text-align:center;padding:50px;background:#0f172a;color:#f87171;font-family:sans-serif;'><h1>Connection Failed</h1><p>" + result.get('error','') + "</p><a href='/connect-gmail' style='color:#38bdf8;'>Try Again</a></body></html>", 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -344,12 +133,7 @@ def api_gmail_status():
             has_gmail = eng.gmail is not None and hasattr(eng.gmail, 'is_authenticated') and eng.gmail.is_authenticated()
         except:
             pass
-        return jsonify({
-            "success": True,
-            "connected": has_gmail,
-            "mode": "web" if has_gmail else "none",
-            "email": os.environ.get('GMAIL_USER', 'info@robopirate.in')
-        })
+        return jsonify({"success": True, "connected": has_gmail, "mode": "web" if has_gmail else "none"})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -362,37 +146,12 @@ def api_dashboard():
         db = get_db()
         eng = get_engine()
         summary = eng.get_summary() if eng else {"sequences": {}, "global": {}}
-        families = _get_batch_families(db)
-        return jsonify({"success": True, "summary": summary, "families": families})
+        return jsonify({"success": True, "summary": summary})
     except Exception as e:
         import traceback
         print(f"[ERROR] Dashboard: {e}")
         print(traceback.format_exc())
         return jsonify({"success": False, "error": str(e)}), 500
-
-def _get_batch_families(db):
-    if not db:
-        return []
-    batches = db.batch_get_all()
-    if not batches:
-        return []
-    families_dict = {}
-    for b in batches:
-        name = b.get("name", "")
-        family_name = re.sub(r'[-_]D\d+$', '', name, flags=re.I)
-        family_name = re.sub(r'(?i)(-day\s*\d+|\s*day\s*\d+|\s*D\d+)$', '', family_name).strip()
-        if family_name not in families_dict:
-            families_dict[family_name] = {"family_name": family_name, "sequence_id": b.get("sequence_id", ""), "days": {}}
-        day_match = re.search(r'(?i)(?:D|Day)\s*(\d+)', name)
-        day = int(day_match.group(1)) if day_match else b.get("day_offset", 1)
-        counts = db.batch_count_by_status(b["id"]) if db else {}
-        total = sum(counts.values())
-        sent = counts.get("sent", 0)
-        families_dict[family_name]["days"][day] = {
-            "batch_id": b["id"], "name": b["name"], "status": b.get("status", "draft"),
-            "total": total, "sent": sent, "scheduled_at": b.get("scheduled_at"), "day_offset": day
-        }
-    return list(families_dict.values())
 
 # ═══════════════════════════════════════════════
 # BATCHES
@@ -446,32 +205,6 @@ def api_batch_delete(batch_id):
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/batches/<batch_id>/recipients')
-def api_batch_recipients(batch_id):
-    try:
-        db = get_db()
-        recipients = db.batch_get_recipients(batch_id) if db else []
-        return jsonify({"success": True, "recipients": recipients})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@app.route('/api/batches/from-pool', methods=['POST'])
-def api_batch_from_pool():
-    try:
-        db = get_db()
-        data = request.json or {}
-        name = data.get('name', '')
-        sequence_id = data.get('sequence_id', 'school')
-        batch_size = int(data.get('batch_size', 50))
-        day_offset = int(data.get('day_offset', 1))
-        eng = get_engine()
-        if not eng or not hasattr(eng, 'create_batch_from_pool'):
-            return jsonify({"success": False, "error": "Engine not ready"}), 500
-        result = eng.create_batch_from_pool(name, sequence_id, batch_size, day_offset)
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
 # ═══════════════════════════════════════════════
 # POOL
 # ═══════════════════════════════════════════════
@@ -496,18 +229,14 @@ def api_chat():
         message = data.get('message', '')
         br = get_brain()
         if not br:
-            return jsonify({"response": "Raj is initializing... Please wait a moment."})
+            return jsonify({"response": "Raj is initializing..."})
         result = br.process(message)
-        return jsonify({
-            "response": result.get("response", "I processed your request, sir."),
-            "action": result.get("action"),
-            "result": result.get("result"),
-        })
+        return jsonify({"response": result.get("response", "I processed your request, sir."), "action": result.get("action"), "result": result.get("result")})
     except Exception as e:
         import traceback
         print(f"[ERROR] Chat: {e}")
         print(traceback.format_exc())
-        return jsonify({"response": f"I'm having trouble right now. Error: {str(e)[:100]}"})
+        return jsonify({"response": f"Error: {str(e)[:100]}"})
 
 # ═══════════════════════════════════════════════
 # TEMPLATES
@@ -522,13 +251,7 @@ def api_templates():
             for day in [1, 3, 5, 7, 10]:
                 tmpl = db.template_get(seq_id, day) if db else None
                 if tmpl:
-                    result[seq_id][day] = {
-                        "sequence_id": seq_id, "day": day,
-                        "subject": tmpl.get("subject", ""),
-                        "locked": bool(tmpl.get("locked")),
-                        "source": tmpl.get("source", "unknown"),
-                        "has_body": bool(tmpl.get("html_body")),
-                    }
+                    result[seq_id][day] = {"sequence_id": seq_id, "day": day, "subject": tmpl.get("subject", ""), "locked": bool(tmpl.get("locked")), "source": tmpl.get("source", "unknown"), "has_body": bool(tmpl.get("html_body"))}
         return jsonify({"success": True, "templates": result})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -615,19 +338,6 @@ def api_blacklist_add():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/blacklist', methods=['DELETE'])
-def api_blacklist_remove():
-    try:
-        db = get_db()
-        data = request.json or {}
-        email = data.get('email', '')
-        if email:
-            db.blacklist_remove(email)
-            return jsonify({"success": True})
-        return jsonify({"success": False, "error": "No email provided"}), 400
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
 # ═══════════════════════════════════════════════
 # REPLIES
 # ═══════════════════════════════════════════════
@@ -642,42 +352,6 @@ def api_replies():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/replies/<reply_id>/handled', methods=['POST'])
-def api_reply_handled(reply_id):
-    try:
-        db = get_db()
-        if db:
-            db.execute("UPDATE replies SET status='handled' WHERE id=?", (reply_id,))
-            db.commit()
-        return jsonify({"success": True})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@app.route('/api/scan-replies', methods=['POST'])
-def api_scan_replies():
-    try:
-        eng = get_engine()
-        if not eng or not hasattr(eng, 'scan_replies'):
-            return jsonify({"success": False, "error": "Engine not ready"})
-        count = eng.scan_replies()
-        return jsonify({"success": True, "count": count})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
-# ═══════════════════════════════════════════════
-# BOUNCE SCAN
-# ═══════════════════════════════════════════════
-@app.route('/api/scan-bounces', methods=['POST'])
-def api_scan_bounces():
-    try:
-        eng = get_engine()
-        if not eng or not hasattr(eng, 'scan_bounces'):
-            return jsonify({"success": False, "error": "Engine not ready"})
-        result = eng.scan_bounces()
-        return jsonify({"success": True, **(result if isinstance(result, dict) else {"count": result})})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
 # ═══════════════════════════════════════════════
 # ENGINE CONTROL
 # ═══════════════════════════════════════════════
@@ -685,10 +359,7 @@ def api_scan_bounces():
 def api_engine_status():
     try:
         eng = get_engine()
-        return jsonify({
-            "running": eng.is_running() if eng else False,
-            "paused": eng.is_paused() if eng else False,
-        })
+        return jsonify({"running": eng.is_running() if eng else False, "paused": eng.is_paused() if eng else False})
     except:
         return jsonify({"running": False, "paused": False})
 
@@ -732,18 +403,7 @@ def api_settings():
             gmail_status = eng.gmail is not None and hasattr(eng.gmail, 'is_authenticated') and eng.gmail.is_authenticated()
         except:
             pass
-        return jsonify({
-            "success": True,
-            "settings": settings,
-            "engine": {
-                "running": eng.is_running() if eng else False,
-                "paused": eng.is_paused() if eng else False,
-            },
-            "gmail": {
-                "connected": gmail_status,
-                "connect_url": "/connect-gmail"
-            }
-        })
+        return jsonify({"success": True, "settings": settings, "engine": {"running": eng.is_running() if eng else False, "paused": eng.is_paused() if eng else False}, "gmail": {"connected": gmail_status, "connect_url": "/connect-gmail"}})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -762,98 +422,6 @@ def api_settings_save():
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
-
-# ═══════════════════════════════════════════════
-# DATA MIGRATION - FIXED v5.7.2
-# ═══════════════════════════════════════════════
-# Global migration state
-_migration_running = False
-_migration_result = None
-_migration_output = ""
-
-@app.route('/api/migrate-csv', methods=['GET', 'POST'])
-def api_migrate_csv():
-    """Force re-import all CSV files into database - runs in background."""
-    global _migration_running, _migration_result, _migration_output
-
-    # If migration is already running, show status
-    if _migration_running:
-        return """<html><body style='font-family:sans-serif;text-align:center;padding:50px;background:#0f172a;color:#e2e8f0;'>
-        <div style='color:#fbbf24;font-size:28px;margin-bottom:20px;'>⏳ Migration Running...</div>
-        <p>Data import is in progress. Refresh this page in 30 seconds.</p>
-        <p><a href='/' style='color:#38bdf8;font-size:18px;'>Back to Dashboard</a></p>
-        </body></html>"""
-
-    # If migration completed, show results
-    if _migration_result is not None:
-        results = _migration_result
-        output = _migration_output
-        total = results['recipients'] + results['batches'] + results['sends'] + results['replies']
-
-        html = "<html><head><meta charset=\"utf-8\"><title>Migration Complete</title>"
-        html += "<style>body{font-family:sans-serif;text-align:center;padding:50px;background:#0f172a;color:#e2e8f0;}"
-        html += ".success{color:#34d399;font-size:28px;margin-bottom:20px;}"
-        html += ".stats{color:#94a3b8;font-size:16px;line-height:1.8;margin:20px 0;}"
-        html += "a{color:#38bdf8;font-size:18px;text-decoration:none;}"
-        html += ".btn{display:inline-block;padding:14px 32px;background:#38bdf8;color:#0f172a;border-radius:8px;margin-top:20px;font-weight:600;}"
-        html += "pre{background:#0f172a;padding:15px;border-radius:8px;text-align:left;font-size:11px;overflow:auto;max-height:200px;color:#94a3b8;}"
-        html += "</style></head><body>"
-
-        if total > 0:
-            html += "<div class=\"success\">✅ Desktop Data Migrated!</div>"
-            html += "<div class=\"stats\">"
-            html += "Recipients: " + str(results['recipients']) + "<br>"
-            html += "Batches: " + str(results['batches']) + "<br>"
-            html += "Sends: " + str(results['sends']) + "<br>"
-            html += "Replies: " + str(results['replies']) + "<br>"
-            html += "Blacklist: " + str(results['blacklist']) + "<br>"
-            html += "Templates: " + str(results['templates'])
-            html += "</div>"
-        else:
-            html += "<div class=\"success\">⚠️ No data imported</div>"
-
-        html += "<pre>" + output.replace("<", "&lt;").replace(">", "&gt;") + "</pre>"
-        html += "<a href=\"/\" class=\"btn\">Go to Dashboard</a></body></html>"
-        return html
-
-    # Start migration in background thread
-    def do_migration():
-        global _migration_running, _migration_result, _migration_output
-        _migration_running = True
-        _migration_result = None
-        _migration_output = ""
-        try:
-            import sys
-            import os
-            import io
-            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-            old_stdout = sys.stdout
-            sys.stdout = buffer = io.StringIO()
-
-            from simple_migrate import run_all
-            _migration_result = run_all()
-
-            _migration_output = buffer.getvalue()
-            sys.stdout = old_stdout
-            print(_migration_output)
-        except Exception as e:
-            import traceback
-            _migration_output = "ERROR: " + str(e) + "\n" + traceback.format_exc()
-            print(_migration_output)
-        finally:
-            _migration_running = False
-
-    thread = threading.Thread(target=do_migration, daemon=True)
-    thread.start()
-
-    return """<html><body style='font-family:sans-serif;text-align:center;padding:50px;background:#0f172a;color:#e2e8f0;'>
-    <div style='color:#fbbf24;font-size:28px;margin-bottom:20px;'>🚀 Migration Started!</div>
-    <p>Importing your desktop data in the background...</p>
-    <p>This may take 1-2 minutes for 900+ recipients.</p>
-    <p><strong>Refresh this page in 30 seconds to see results.</strong></p>
-    <p><a href='/' style='color:#38bdf8;font-size:18px;'>Back to Dashboard</a></p>
-    </body></html>"""
 
 # ═══════════════════════════════════════════════
 # INIT
