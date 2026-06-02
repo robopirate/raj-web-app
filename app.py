@@ -168,7 +168,7 @@ def api_dashboard():
         bl_count = cur.fetchone()[0]
 
         # Active batches
-        cur = db.execute("SELECT COUNT(*) FROM batches WHERE status IN ('scheduled','running')")
+        cur = db.execute("SELECT COUNT(*) FROM batches WHERE status != 'completed'")
         active_batches = cur.fetchone()[0]
 
         # Templates
@@ -362,7 +362,7 @@ def api_templates_sync():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/templates/<seq_id>/<int:day>/lock', methods=['POST'])
+@app.route('/api/templates/<seq_id>/<int:day>/lock', methods=['GET', 'POST'])
 def api_template_lock(seq_id, day):
     try:
         db = get_db()
