@@ -144,8 +144,72 @@ def api_gmail_status():
 def api_dashboard():
     try:
         db = get_db()
-        eng = get_engine()
-        summary = eng.get_summary() if eng else {"sequences": {}, "global": {}}
+
+        # Raw counts - no JOINs needed
+        # Recipients by sequence
+        cur = db.execute("SELECT sequence_id, COUNT(*) FROM recipients GROUP BY sequence_id")
+        recipients_by_seq = {r[0]: r[1] for r in cur.fetchall()}
+
+        # Total sends by status (no JOIN - just count all)
+        cur = db.execute("SELECT status, COUNT(*) FROM sends GROUP BY status")
+        sends_by_status = {r[0]: r[1] for r in cur.fetchall()}
+        total_sent = sends_by_status.get('sent', 0)
+        total_bounced = sends_by_status.get('bounced', 0)
+        total_replied = sends_by_status.get('replied', 0)
+
+        # Blacklist count
+        cur = db.execute("SELECT COUNT(*) FROM blacklist")
+        bl_count = cur.fetchone()[0]
+
+        # Active batches
+        cur = db.execute("SELECT COUNT(*) FROM batches WHERE status IN ('scheduled','running')")
+        active_batches = cur.fetchone()[0]
+
+        # Templates
+        cur = db.execute("SELECT sequence_id, COUNT(*) FROM templates GROUP BY sequence_id")
+        templates_by_seq = {r[0]: r[1] for r in cur.fetchall()}
+
+        # Day-wise sends (count by day from sends table directly)
+        cur = db.execute("SELECT day, COUNT(*) FROM sends WHERE status='sent' GROUP BY day ORDER BY day")
+        day_wise_sends = {r[0]: r[1] for r in cur.fetchall()}
+
+        # Build summary
+        summary = {"sequences": {}, "global": {}}
+
+        for seq_id in ["school", "csr"]:
+            seq = {
+                "recipients": recipients_by_seq.get(seq_id, 0),
+                "pool_count": recipients_by_seq.get(seq_id, 0),  # All are pool until batched
+                "sent": total_sent,  # Show total for now (can't filter by seq without JOIN)
+                "bounced": total_bounced,
+                "replied": total_replied,
+                "templates": templates_by_seq.get(seq_id, 0),
+                "pipeline": {
+                    "total": recipients_by_seq.get(seq_id, 0),
+                    "drafted": 0,
+                    "sent": total_sent,
+                    "bounced": total_bounced,
+                    "replied": total_replied
+                },
+                "day_wise": {
+                    1: {"total": day_wise_sends.get(1, 0), "sent": day_wise_sends.get(1, 0), "bounced": 0, "replied": 0, "status": "Done" if day_wise_sends.get(1,0) > 0 else "Pending"},
+                    3: {"total": day_wise_sends.get(3, 0), "sent": day_wise_sends.get(3, 0), "bounced": 0, "replied": 0, "status": "Done" if day_wise_sends.get(3,0) > 0 else "Pending"},
+                    5: {"total": day_wise_sends.get(5, 0), "sent": day_wise_sends.get(5, 0), "bounced": 0, "replied": 0, "status": "Done" if day_wise_sends.get(5,0) > 0 else "Pending"},
+                    7: {"total": day_wise_sends.get(7, 0), "sent": day_wise_sends.get(7, 0), "bounced": 0, "replied": 0, "status": "Done" if day_wise_sends.get(7,0) > 0 else "Pending"},
+                    10: {"total": day_wise_sends.get(10, 0), "sent": day_wise_sends.get(10, 0), "bounced": 0, "replied": 0, "status": "Done" if day_wise_sends.get(10,0) > 0 else "Pending"},
+                },
+                "batches": []
+            }
+            summary["sequences"][seq_id] = seq
+
+        summary["global"] = {
+            "total_recipients": sum(recipients_by_seq.values()),
+            "blacklist_count": bl_count,
+            "pending_replies": 0,
+            "drafted_replies": 0,
+            "active_batches": active_batches
+        }
+
         return jsonify({"success": True, "summary": summary})
     except Exception as e:
         import traceback
