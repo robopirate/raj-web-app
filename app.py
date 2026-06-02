@@ -302,12 +302,13 @@ def oauth2callback():
             <a href="/" class="btn">Go to Dashboard</a></body></html>
             """
         else:
-            return f"""
+            error_msg = result.get('error', 'Unknown error')
+            return """
             <html><head><meta charset="utf-8"><title>Connection Failed</title>
-            <style>body{font-family:sans-serif;text-align:center;padding:50px;background:#0f172a;color:#e2e8f0;}
-            .error{color:#f87171;font-size:28px;margin-bottom:20px;}a{color:#38bdf8;}</style></head>
+            <style>body{{font-family:sans-serif;text-align:center;padding:50px;background:#0f172a;color:#e2e8f0;}}
+            .error{{color:#f87171;font-size:28px;margin-bottom:20px;}}a{{color:#38bdf8;}}</style></head>
             <body><div class="error">❌ Connection Failed</div>
-            <p>{result.get('error', 'Unknown error')}</p>
+            <p>""" + error_msg + """</p>
             <a href="/connect-gmail">Try Again</a> | <a href="/">Dashboard</a></body></html>
             """, 400
     except Exception as e:
@@ -766,9 +767,9 @@ def api_migrate_csv():
         if request.method == 'GET':
             return """
             <html><head><meta charset="utf-8"><title>Migration Complete</title>
-            <style>body{font-family:sans-serif;text-align:center;padding:50px;background:#0f172a;color:#e2e8f0;}
-            .success{color:#34d399;font-size:28px;margin-bottom:20px;}a{color:#38bdf8;font-size:18px;text-decoration:none;}
-            .btn{display:inline-block;padding:14px 32px;background:#38bdf8;color:#0f172a;border-radius:8px;margin-top:20px;font-weight:600;}</style></head>
+            <style>body{{font-family:sans-serif;text-align:center;padding:50px;background:#0f172a;color:#e2e8f0;}}
+            .success{{color:#34d399;font-size:28px;margin-bottom:20px;}}a{{color:#38bdf8;font-size:18px;text-decoration:none;}}
+            .btn{{display:inline-block;padding:14px 32px;background:#38bdf8;color:#0f172a;border-radius:8px;margin-top:20px;font-weight:600;}}</style></head>
             <body><div class="success">✅ Desktop Data Migrated!</div>
             <p>All your CSV data has been imported into the cloud database.</p>
             <a href="/" class="btn">Go to Dashboard</a></body></html>
