@@ -132,7 +132,7 @@ def api_batches():
         batches = db.batch_get_all()
         # Add recipient_count to each batch - frontend expects this field
         for b in batches:
-            b['recipient_count'] = db.batch_count_recipients(b['id'])
+            b['recipients'] = db.batch_count_recipients(b['id'])
             # Convert datetime objects to ISO strings for JSON
             for key in ['created_at', 'scheduled_at', 'started_at', 'completed_at']:
                 if b.get(key) and hasattr(b[key], 'isoformat'):
