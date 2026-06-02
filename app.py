@@ -1,10 +1,11 @@
 """
 Raj Web App - RoboPirate Email Automation
-v5.9.7 FINAL - Uses exact repo classes, matches frontend format
+v5.9.8 - Robust: returns multiple field names for frontend compatibility
 """
 import os
 import sys
 import json
+import time
 from datetime import datetime
 from pathlib import Path
 from flask import Flask, jsonify, request, redirect, send_from_directory, render_template_string
@@ -36,7 +37,7 @@ def index():
 # ── Health ────────────────────────────────────────────────────────────
 @app.route('/health')
 def health_check():
-    return jsonify({"status": "ok", "version": "5.9.7", "timestamp": datetime.now().isoformat()})
+    return jsonify({"status": "ok", "version": "5.9.8", "timestamp": datetime.now().isoformat()})
 
 # ═══════════════════════════════════════════════════════════════════════
 # GMAIL OAUTH
@@ -102,21 +103,36 @@ def api_gmail_status():
         return jsonify({"success": True, "connected": False, "mode": "none"})
 
 # ═══════════════════════════════════════════════════════════════════════
-# DASHBOARD
+# DASHBOARD - WITH CACHING FOR SPEED
 # ═══════════════════════════════════════════════════════════════════════
+_dashboard_cache = None
+_dashboard_cache_time = 0
+
 @app.route('/api/dashboard')
 def api_dashboard():
+    global _dashboard_cache, _dashboard_cache_time
     try:
+        # Cache for 5 seconds to prevent slow reloads
+        now = time.time()
+        if _dashboard_cache and (now - _dashboard_cache_time) < 5:
+            return jsonify(_dashboard_cache)
+
         summary = db.get_dashboard_summary()
 
-        # Active batches (non-completed) with recipient counts
+        # Active batches (non-completed) with ALL possible field names
         active = []
         for b in db.batch_get_all():
             if b.get('status') != 'completed':
-                b['recipients'] = db.batch_count_recipients(b['id'])
+                count = db.batch_count_recipients(b['id'])
+                b['recipients'] = count
+                b['recipient_count'] = count
+                b['total_recipients'] = count
                 active.append(b)
 
-        return jsonify({"success": True, "summary": summary, "active_batches": active[:5]})
+        result = {"success": True, "summary": summary, "active_batches": active[:5]}
+        _dashboard_cache = result
+        _dashboard_cache_time = now
+        return jsonify(result)
     except Exception as e:
         import traceback
         print(f"[ERROR] Dashboard: {e}")
@@ -124,15 +140,19 @@ def api_dashboard():
         return jsonify({"success": False, "error": str(e)}), 500
 
 # ═══════════════════════════════════════════════════════════════════════
-# BATCHES - MATCHES FRONTEND FORMAT
+# BATCHES - ALL FIELD NAMES FOR COMPATIBILITY
 # ═══════════════════════════════════════════════════════════════════════
 @app.route('/api/batches')
 def api_batches():
     try:
         batches = db.batch_get_all()
-        # Add recipient_count to each batch - frontend expects this field
         for b in batches:
-            b['recipients'] = db.batch_count_recipients(b['id'])
+            count = db.batch_count_recipients(b['id'])
+            # Return ALL possible field names so frontend finds what it needs
+            b['recipients'] = count
+            b['recipient_count'] = count
+            b['total_recipients'] = count
+            b['count'] = count
             # Convert datetime objects to ISO strings for JSON
             for key in ['created_at', 'scheduled_at', 'started_at', 'completed_at']:
                 if b.get(key) and hasattr(b[key], 'isoformat'):
@@ -150,10 +170,8 @@ def api_batch_get(batch_id):
         batch = db.batch_get(batch_id)
         if not batch:
             return jsonify({"success": False, "error": "Batch not found"}), 404
-
         recipients = db.batch_get_recipients(batch_id)
         counts = db.batch_count_by_status(batch_id)
-
         return jsonify({"success": True, "batch": batch, "recipients": recipients, "counts": counts})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -209,7 +227,7 @@ def api_chat():
         return jsonify({"response": f"Error: {str(e)[:100]}"})
 
 # ═══════════════════════════════════════════════════════════════════════
-# TEMPLATES - MATCHES FRONTEND FORMAT
+# TEMPLATES - ALL FIELD NAMES + PROPER BOOLEAN
 # ═══════════════════════════════════════════════════════════════════════
 @app.route('/api/templates')
 def api_templates():
@@ -220,15 +238,33 @@ def api_templates():
             for day in [1, 3, 5, 7, 10]:
                 tmpl = db.template_get(seq_id, day)
                 if tmpl:
+                    # Ensure locked is proper boolean
+                    locked = tmpl.get('locked', False)
+                    if isinstance(locked, str):
+                        locked = locked.lower() in ('true', '1', 'yes', 'locked')
+                    elif isinstance(locked, int):
+                        locked = bool(locked)
+
+                    # Return both body and html_body for compatibility
+                    body = tmpl.get('html_body', '') or tmpl.get('body', '')
+
                     result[seq_id][day] = {
-                        "sequence_id": seq_id, "day": day,
+                        "sequence_id": seq_id,
+                        "day": day,
+                        "day_offset": day,
                         "subject": tmpl.get('subject', ''),
-                        "locked": tmpl.get('locked', False),
+                        "body": body,
+                        "html_body": body,
+                        "locked": locked,
                         "source": tmpl.get('source', 'db'),
-                        "has_body": bool(tmpl.get('html_body'))
+                        "has_body": bool(body),
+                        "status": tmpl.get('status', 'ready')
                     }
         return jsonify({"success": True, "templates": result})
     except Exception as e:
+        import traceback
+        print(f"[ERROR] Templates: {e}")
+        print(traceback.format_exc())
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/templates/<seq_id>/<int:day>')
@@ -236,6 +272,16 @@ def api_template_get(seq_id, day):
     try:
         tmpl = db.template_get(seq_id, day)
         if tmpl:
+            # Ensure locked is proper boolean
+            locked = tmpl.get('locked', False)
+            if isinstance(locked, str):
+                locked = locked.lower() in ('true', '1', 'yes', 'locked')
+            elif isinstance(locked, int):
+                locked = bool(locked)
+            tmpl['locked'] = locked
+            # Ensure body field exists
+            if 'body' not in tmpl and 'html_body' in tmpl:
+                tmpl['body'] = tmpl['html_body']
             return jsonify({"success": True, "template": tmpl})
         return jsonify({"success": False, "error": "Template not found"}), 404
     except Exception as e:
@@ -358,11 +404,9 @@ def api_settings():
         settings = {}
         for key in ['brief_email', 'send_rate', 'stagger_minutes', 'morning_hour', 'eod_hour']:
             settings[key] = db.get_meta(key) or ''
-
         for key in ['auto_advance', 'sunday_filter']:
             val = db.get_meta(key)
             settings[key] = (val or 'true') != 'false'
-
         if not settings.get('brief_email'):
             settings['brief_email'] = 'itsomkarsinghhh@gmail.com'
         if not settings.get('send_rate'):
