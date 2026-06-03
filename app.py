@@ -1,11 +1,12 @@
 """
 Raj Web App - RoboPirate Email Automation
-v5.9.11 - Simplified dashboard, fast loading
+v5.9.12 - Pipeline families on dashboard
 """
 import os
 import sys
 import json
 import time
+import re
 from datetime import datetime
 from pathlib import Path
 from flask import Flask, jsonify, request, redirect, send_from_directory, render_template_string
@@ -52,7 +53,7 @@ def index():
 # ── Health ────────────────────────────────────────────────────────────
 @app.route('/health')
 def health_check():
-    return jsonify({"status": "ok", "version": "5.9.11", "timestamp": datetime.now().isoformat()})
+    return jsonify({"status": "ok", "version": "5.9.12", "timestamp": datetime.now().isoformat()})
 
 # ═══════════════════════════════════════════════════════════════════════
 # GMAIL OAUTH
@@ -118,10 +119,99 @@ def api_gmail_status():
         return jsonify({"success": True, "connected": False, "mode": "none"})
 
 # ═══════════════════════════════════════════════════════════════════════
-# DASHBOARD - SIMPLE AND FAST
+# DASHBOARD - WITH PIPELINE FAMILIES
 # ═══════════════════════════════════════════════════════════════════════
 _dashboard_cache = None
 _dashboard_cache_time = 0
+
+def _get_pipeline_families():
+    """Build pipeline families like desktop app: CSR, MUMBAI SCHOOL, Master_Lead, etc."""
+    try:
+        cur = db.conn.cursor()
+
+        # Get all batches with their counts
+        cur.execute("""
+            SELECT b.id, b.name, b.sequence_id, b.day_offset, b.status, b.parent_batch_id
+            FROM batches b
+            ORDER BY b.sequence_id, b.name, b.day_offset
+        """)
+
+        batches = []
+        for row in cur.fetchall():
+            batches.append({
+                'id': row[0], 'name': row[1], 'sequence_id': row[2],
+                'day': row[3], 'status': row[4], 'parent_id': row[5],
+                'recipients': _batch_counts.get(row[0], 0)
+            })
+
+        # Group into families by base name
+        families = {}
+        for b in batches:
+            # Extract base name (remove day suffix like -D1, -D3, etc.)
+            base_name = re.sub(r'[-_]?D\d+$', '', b['name'], flags=re.I).strip()
+            if not base_name:
+                base_name = b['sequence_id'].upper()
+
+            if base_name not in families:
+                families[base_name] = {
+                    'name': base_name,
+                    'sequence_id': b['sequence_id'],
+                    'total_recipients': 0,
+                    'days': {}
+                }
+
+            # Add day info
+            day = b['day'] or 1
+            families[base_name]['days'][day] = {
+                'batch_id': b['id'],
+                'status': b['status'],
+                'recipients': b['recipients'],
+                'sent': 0,  # Will calculate from sends table
+                'due': b['recipients']  # Recipients not yet sent
+            }
+            families[base_name]['total_recipients'] += b['recipients']
+
+        # Get sent counts per batch
+        cur.execute("""
+            SELECT batch_id, COUNT(*) 
+            FROM sends 
+            WHERE status = 'sent' AND batch_id IS NOT NULL
+            GROUP BY batch_id
+        """)
+        sent_counts = {row[0]: row[1] for row in cur.fetchall()}
+
+        # Update sent counts in families
+        for family in families.values():
+            for day, day_info in family['days'].items():
+                batch_id = day_info['batch_id']
+                sent = sent_counts.get(batch_id, 0)
+                day_info['sent'] = sent
+                day_info['due'] = max(0, day_info['recipients'] - sent)
+
+        cur.close()
+
+        # Convert to list and filter out empty families
+        result = []
+        for name, family in families.items():
+            if family['total_recipients'] > 0:
+                # Ensure all days 1,3,5,7,10 exist
+                for day in [1, 3, 5, 7, 10]:
+                    if day not in family['days']:
+                        family['days'][day] = {
+                            'batch_id': None,
+                            'status': 'missing',
+                            'recipients': 0,
+                            'sent': 0,
+                            'due': 0
+                        }
+                result.append(family)
+
+        return sorted(result, key=lambda x: x['total_recipients'], reverse=True)
+    except Exception as e:
+        print(f"[ERROR] Pipeline families: {e}")
+        import traceback
+        print(traceback.format_exc())
+        return []
 
 @app.route('/api/dashboard')
 def api_dashboard():
@@ -133,7 +223,10 @@ def api_dashboard():
 
         summary = db.get_dashboard_summary()
 
-        # Simple active batches list
+        # Pipeline families (like desktop app)
+        pipeline_families = _get_pipeline_families()
+
+        # Active batches list (simple)
         active = []
         for b in db.batch_get_all():
             if b.get('status') != 'completed':
@@ -142,7 +235,12 @@ def api_dashboard():
                 b['recipient_count'] = count
                 active.append(b)
 
-        result = {"success": True, "summary": summary, "active_batches": active[:5]}
+        result = {
+            "success": True, 
+            "summary": summary, 
+            "active_batches": active[:5],
+            "pipeline_families": pipeline_families  # NEW: for pipeline cards
+        }
         _dashboard_cache = result
         _dashboard_cache_time = now
         return jsonify(result)
@@ -159,11 +257,10 @@ def api_dashboard():
 def api_batches():
     try:
         batches = db.batch_get_all()
-        # Filter: only show batches with recipients > 0
         filtered = []
         for b in batches:
             count = _batch_counts.get(b['id'], 0)
-            if count > 0:  # Only show batches with recipients
+            if count > 0:
                 b['recipients'] = count
                 b['recipient_count'] = count
                 b['total_recipients'] = count
